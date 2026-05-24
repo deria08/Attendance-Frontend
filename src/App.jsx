@@ -13,7 +13,7 @@ import FaceRecognitionPage from './pages/FaceRecognitionPage'
 import RekapAbsensiPage from './pages/RekapAbsensiPage'
 import KelolaMataKuliah from './pages/KelolaMataKuliah'
 import RegistrasiWajah from './pages/RegistrasiWajah';
-import KrsPage from './pages/Krspage';
+import KrsPage from './pages/KrsPage';
 import ManajemenEnrollment from './pages/ManajemenEnrollment';
 import ManualAttendancePage from './pages/ManualAttendancePage';
 import { apiFetch } from './utils/api';
