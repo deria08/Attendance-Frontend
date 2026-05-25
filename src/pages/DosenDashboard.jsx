@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../utils/api';
+import { EXPRESS_API_URL } from '../config';
 
 export default function DosenDashboard({ 
   onNavigate, 
@@ -24,14 +25,14 @@ export default function DosenDashboard({
   const fetchCourses = async () => {
     console.log('Fetching courses for userId:', userId);
     try {
-      const res = await apiFetch(`http://localhost:5000/api/courses/dosen/${userId}`);
+      const res = await apiFetch(`${EXPRESS_API_URL}/courses/dosen/${userId}`);
       if (!res.ok) throw new Error('Gagal mengambil data');
       const data = await res.json();
       console.log('Courses data:', data);
       setCourses(data);
       data.forEach(async (course) => {
         try {
-          const resMeet = await apiFetch(`http://localhost:5000/api/meetings/active/${course._id}`);
+          const resMeet = await apiFetch(`${EXPRESS_API_URL}/meetings/active/${course._id}`);
           if (resMeet.ok) {
             const meeting = await resMeet.json();
             setActiveMeeting(prev => ({ ...prev, [course._id]: meeting }));
@@ -47,7 +48,7 @@ export default function DosenDashboard({
       return;
     }
     try {
-      const res = await apiFetch('http://localhost:5000/api/meetings/open', {
+      const res = await apiFetch(`${EXPRESS_API_URL}/meetings/open`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ course_id: courseId, pertemuan_ke: parseInt(pertemuanKe) })
@@ -67,7 +68,7 @@ export default function DosenDashboard({
 
   const closeMeeting = async (meetingId, courseId) => {
   try {
-    const res = await apiFetch(`http://localhost:5000/api/meetings/close/${meetingId}`, { method: 'PUT' });
+    const res = await apiFetch(`${EXPRESS_API_URL}/meetings/close/${meetingId}`, { method: 'PUT' });
     if (res.ok) {
       alert('Sesi ditutup');
       setActiveMeeting(prev => {

@@ -17,6 +17,7 @@ import KrsPage from './pages/KrsPage';
 import ManajemenEnrollment from './pages/ManajemenEnrollment';
 import ManualAttendancePage from './pages/ManualAttendancePage';
 import { apiFetch } from './utils/api';
+import { EXPRESS_API_URL } from './config';
 
 function App() {
   const [userId, setUserId] = useState('')
@@ -27,7 +28,6 @@ function App() {
   const [manualAbsenEnabled, setManualAbsenEnabled] = useState(false)
   const [userData, setUserData] = useState(null)
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const API_URL = 'http://localhost:5000/api'
   // Di App.jsx, tambahkan state
   
   const [faceStatus, setFaceStatus] = useState({}); // key: nim_nidn, value: boolean
@@ -37,7 +37,7 @@ function App() {
 // Fungsi fetch face status
 const fetchFaceStatus = async () => {
   try {
-    const res = await apiFetch(`${API_URL}/users/mahasiswa/face-status`);
+    const res = await apiFetch(`${EXPRESS_API_URL}/users/mahasiswa/face-status`);
     const data = await res.json(); // array of { nim, name, face_registered }
     const map = {};
     data.forEach(item => {
@@ -56,7 +56,7 @@ useEffect(() => {
 
 const fetchProfile = async () => {
   try {
-    const res = await apiFetch(`${API_URL}/profile`);
+    const res = await apiFetch(`${Expr}/profile`);
     if (res.ok) {
       const user = await res.json();
       setUserData(user);
@@ -71,7 +71,7 @@ const fetchProfile = async () => {
 // Fungsi reset wajah (panggil dari admin)
 const handleResetFace = async (nim, name) => {
   try {
-    await apiFetch(`${API_URL}/users/faces/${encodeURIComponent(nim)}`, { method: 'DELETE' });
+    await apiFetch(`${Expr}/users/faces/${encodeURIComponent(nim)}`, { method: 'DELETE' });
     // Refresh status
     await fetchFaceStatus();
     // Optional: jika perlu refresh daftar users (tidak perlu karena nama tetap)
@@ -83,11 +83,11 @@ const handleResetFace = async (nim, name) => {
   const fetchUsers = async () => {
   try {
     // Ambil data user dari backend Express (seperti biasa)
-    const resUsers = await apiFetch(`${API_URL}/auth/users`);
+    const resUsers = await apiFetch(`${Expr}/auth/users`);
     const usersData = await resUsers.json();
     
     // Ambil status face_registered dari endpoint baru (misal /api/faces/status)
-    const resFaceStatus = await apiFetch(`${API_URL}/users/mahasiswa/face-status`);
+    const resFaceStatus = await apiFetch(`${Expr}/users/mahasiswa/face-status`);
     const faceStatus = await resFaceStatus.json(); // array: [{ name, nim, face_registered }]
     
     // Gabungkan: tambahkan face_registered ke setiap user yang role mahasiswa
@@ -145,7 +145,7 @@ const handleNavigate = (page, data = {}) => {
   // Di App.jsx, tambahkan dalam fungsi handleLogin yang sudah ada atau buat khusus
 const handleAdminLogin = async (username, password, expectedRole) => {
   try {
-    const res = await fetch(`${API_URL}/auth/login`, {
+    const res = await fetch(`${Expr}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: username, nim_nidn: password })
@@ -168,7 +168,7 @@ const handleAdminLogin = async (username, password, expectedRole) => {
 
   const handleLogin = async (name, nim_nidn, expectedRole) => {
   try {
-    const res = await fetch(`${API_URL}/auth/login`, {
+    const res = await fetch(`${Expr}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, nim_nidn })
@@ -203,7 +203,7 @@ const handleAdminLogin = async (username, password, expectedRole) => {
   }
 
   const handleAddMahasiswa = async (data) => {
-    await apiFetch(`${API_URL}/auth/register`, {
+    await apiFetch(`${Expr}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -219,7 +219,7 @@ const handleAdminLogin = async (username, password, expectedRole) => {
   };
 
   const handleAddDosen = async (data) => {
-  await apiFetch(`${API_URL}/auth/register`, {
+  await apiFetch(`${Expr}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -233,7 +233,7 @@ const handleAdminLogin = async (username, password, expectedRole) => {
 }
 
   const handleEditMahasiswa = async (id, data) => {
-  await apiFetch(`${API_URL}/auth/users/${id}`, {
+  await apiFetch(`${Expr}/auth/users/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -249,7 +249,7 @@ const handleAdminLogin = async (username, password, expectedRole) => {
 }
 
   const handleEditDosen = async (id, data) => {
-    await apiFetch(`${API_URL}/auth/users/${id}`, {
+    await apiFetch(`${Expr}/auth/users/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -263,20 +263,20 @@ const handleAdminLogin = async (username, password, expectedRole) => {
   }
 
   const handleDeleteMahasiswa = async (id) => {
-  await apiFetch(`${API_URL}/auth/users/${id}`, {
+  await apiFetch(`${Expr}/auth/users/${id}`, {
     method: 'DELETE'
   })
   fetchUsers()
 }
 
 const handleDeleteDosen = async (id) => {
-  await apiFetch(`${API_URL}/auth/users/${id}`, {
+  await apiFetch(`${Expr}/auth/users/${id}`, {
     method: 'DELETE'
   })
   fetchUsers()
 }
   const handleAddMataKuliah = async (data) => {
-  await apiFetch(`${API_URL}/courses`, {
+  await apiFetch(`${Expr}/courses`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -285,7 +285,7 @@ const handleDeleteDosen = async (id) => {
 };
 
   const handleEditMataKuliah = async (id, data) => {
-    await apiFetch(`${API_URL}/courses/${id}`, {
+    await apiFetch(`${Expr}/courses/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -293,7 +293,7 @@ const handleDeleteDosen = async (id) => {
   };
 
   const handleDeleteMataKuliah = async (id) => {
-    await apiFetch(`${API_URL}/courses/${id}`, { method: 'DELETE' });
+    await apiFetch(`${Expr}/courses/${id}`, { method: 'DELETE' });
   };
   console.log('App - currentPage:', currentPage, 'userId:', userId);
   // const currentMahasiswa = mahasiswaList?.find(m => m.nim === userId);

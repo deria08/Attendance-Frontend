@@ -1,13 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-
+import { EXPRESS_API_URL } from '../config';
 export default function AdminLoginPage({ onNavigate, onLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -31,7 +30,7 @@ export default function AdminLoginPage({ onNavigate, onLogin }) {
         await onLogin(username, password, 'admin');
       } else {
         // Fallback: langsung panggil API
-        const res = await fetch('http://localhost:5000/api/auth/login', {
+        const res = await fetch(`${EXPRESS_API_URL}/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
