@@ -1,9 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react'
 import Modal from '../components/Modal'
 import { apiFetch } from '../utils/api'
+import { FASTAPI_API_URL } from '../config'
+import { EXPRESS_API_URL } from '../config'
+import Footer from '../components/Footer'
 
-export default function FaceRecognitionPage({ onNavigate, userName }) {
+export default function FaceRecognitionPage({ 
+    onNavigate, 
+    userName,
+    // userId, 
+    // userData 
+    }) {
   // State kamera
+  // State untuk instruksi liveness
+  const [livenessInstruction, setLivenessInstruction] = useState('')
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraReady, setCameraReady] = useState(false)
   const [cameraError, setCameraError] = useState('')
@@ -26,12 +36,25 @@ export default function FaceRecognitionPage({ onNavigate, userName }) {
   // Meeting aktif (dari backend Express)
   const [activeMeeting, setActiveMeeting] = useState(null)
   const [activeMeetingLoading, setActiveMeetingLoading] = useState(false)
+  // Fungsi generate instruksi acak
+  const generateRandomInstruction = () => {
+    const instructions = [
+      'Kedipkan mata Anda',
+      'Gerakkan kepala ke kanan',
+      'Gerakkan kepala ke kiri',
+      'Angkat kepala (lihat ke atas)',
+      'Tundukkan kepala (lihat ke bawah)',
+      'Kedipkan mata dan gelengkan kepala'
+    ] 
+    const random = instructions[Math.floor(Math.random() * instructions.length)]
+    setLivenessInstruction(random)
+  }
 
   // ========== 1. Ambil daftar course mahasiswa ==========
   useEffect(() => {
     const fetchCourses = async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/courses/mahasiswa?name=${encodeURIComponent(userName)}`)
+        const res = await fetch(`${FASTAPI_API_URL}/api/courses/mahasiswa?name=${encodeURIComponent(userName)}`)
         // const res = await fetch(`http://127.0.0.1:8000/api/courses/mahasiswa?user_id=${userId}`)
         const data = await res.json()
         setCourses(data)
@@ -49,7 +72,7 @@ export default function FaceRecognitionPage({ onNavigate, userName }) {
       const course = courses.find(c => c.kode_mk === selectedCourse)
       if (course && course.id) {
         setActiveMeetingLoading(true)
-        apiFetch(`http://localhost:5000/api/meetings/active/${course.id}`)
+        apiFetch(`${EXPRESS_API_URL}/meetings/active/${course.id}`)
           .then(res => res.ok ? res.json() : null)
           .then(data => setActiveMeeting(data))
           .catch(() => setActiveMeeting(null))
@@ -63,13 +86,18 @@ export default function FaceRecognitionPage({ onNavigate, userName }) {
   // ========== 3. Cek status absensi (sudah absen hari ini) ==========
   const checkAttendanceStatus = async (courseKode) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/attendance-status?name=${encodeURIComponent(userName)}&course_kode=${encodeURIComponent(courseKode)}`)
+      const res = await fetch(`${FASTAPI_API_URL}/api/attendance-status?name=${encodeURIComponent(userName)}&course_kode=${encodeURIComponent(courseKode)}`)
       const data = await res.json()
       setAttendanceStatus(prev => ({ ...prev, [courseKode]: data.hasAttended }))
     } catch (err) {
       console.error('Gagal mengecek status absensi:', err)
     }
   }
+
+  // Refresh instruksi saat mata kuliah berubah
+  useEffect(() => {
+    generateRandomInstruction()
+  }, [selectedCourse])
 
   useEffect(() => {
     if (selectedCourse) checkAttendanceStatus(selectedCourse)
@@ -161,15 +189,17 @@ export default function FaceRecognitionPage({ onNavigate, userName }) {
     return canvas.toDataURL('image/jpeg', 0.9)
   }
 
-  const captureMultipleFrames = async (frameCount = 3, intervalMs = 300) => {
-    const frames = []
-    for (let i = 0; i < frameCount; i++) {
-      const dataUrl = capturePhoto()
-      frames.push(dataUrl)
-      if (i < frameCount - 1) await new Promise(resolve => setTimeout(resolve, intervalMs))
-    }
-    return frames
+  const captureMultipleFrames = async (frameCount = 15, intervalMs = 700) => {
+  const frames = []
+  for (let i = 0; i < frameCount; i++) {
+    const dataUrl = capturePhoto()
+    frames.push(dataUrl)
+    if (i < frameCount - 1) await new Promise(resolve => setTimeout(resolve, intervalMs))
   }
+  return frames
+}
+
+
 
   const getLocation = () => {
     return new Promise((resolve, reject) => {
@@ -180,94 +210,107 @@ export default function FaceRecognitionPage({ onNavigate, userName }) {
 
   // ========== TAKE ATTENDANCE (tanpa mengirim pertemuan manual) ==========
   const takeAttendance = async (framesDataUrls, lat, lon) => {
-    const formData = new FormData()
-    formData.append('name', userName)
-    formData.append('course_kode', selectedCourse)
-    // PENTING: Jangan kirim field 'pertemuan' karena backend akan mengambil dari meeting aktif
-    formData.append('lat', lat.toString())
-    formData.append('lon', lon.toString())
-    for (let i = 0; i < framesDataUrls.length; i++) {
-      const blob = await fetch(framesDataUrls[i]).then(res => res.blob())
-      formData.append('files', blob, `frame${i}.jpg`)
-    }
-
-    const response = await fetch('http://127.0.0.1:8000/api/attendance', {
-      method: 'POST',
-      body: formData,
-    })
-
-    const data = await response.json()
-    console.log('Attendance response:', data)
-
-    if (data.error) throw new Error(data.error)
-    if (!response.ok) throw new Error(data.error || 'Absensi gagal')
-    return {
-      success: data.status === 'success',
-      message: data.message,
-      timestamp: new Date().toLocaleTimeString('id-ID')
-    }
+  const formData = new FormData()
+  formData.append('name', userName)
+  formData.append('course_kode', selectedCourse)
+  formData.append('lat', lat.toString())
+  formData.append('lon', lon.toString())
+  for (let i = 0; i < framesDataUrls.length; i++) {
+    const blob = await fetch(framesDataUrls[i]).then(res => res.blob())
+    formData.append('files', blob, `frame${i}.jpg`)
   }
+
+  const response = await fetch(`${FASTAPI_API_URL}/api/attendance`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  const data = await response.json()
+  console.log("Status HTTP:", response.status);
+  console.log("Data response:", data);
+  // console.log('Attendance response:', data)
+
+  if (!response.ok) {
+    // Ambil pesan error dari detail (FastAPI) atau error (fallback)
+    const errorMsg = data.detail || data.error || data.message || 'Absensi gagal'
+    throw new Error(errorMsg)
+  }
+
+  return {
+    success: data.status === 'success',
+    message: data.message,
+    timestamp: new Date().toLocaleTimeString('id-ID')
+  }
+}
 
   const handleStartScan = async () => {
-    if (!cameraReady) {
-      setCameraError('Kamera belum siap, tunggu sebentar...')
-      return
-    }
-    // Cek apakah sudah absen untuk course ini
-    if (attendanceStatus[selectedCourse]) {
-      setScanResult({
-        success: false,
-        message: 'Anda sudah melakukan absensi hari ini untuk mata kuliah ini',
-        timestamp: new Date().toLocaleTimeString('id-ID')
-      })
-      setShowResultModal(true)
-      return
-    }
-
-    // Cek apakah ada meeting aktif
-    if (!activeMeeting) {
-      setScanResult({
-        success: false,
-        message: 'Belum ada sesi absensi yang dibuka oleh dosen untuk mata kuliah ini',
-        timestamp: new Date().toLocaleTimeString('id-ID')
-      })
-      setShowResultModal(true)
-      return
-    }
-
-    setIsScanning(true)
-    setCameraError('')
-
-    try {
-      let position
-      try {
-        position = await getLocation()
-      } catch (locError) {
-        throw new Error('Tidak dapat mengakses lokasi. Pastikan GPS aktif dan izinkan akses lokasi.')
-      }
-      const { latitude, longitude } = position.coords
-
-      const frames = await captureMultipleFrames(3, 300)
-      if (frames.length < 3) throw new Error('Gagal mengambil cukup frame')
-
-      const result = await takeAttendance(frames, latitude, longitude)
-      setScanResult(result)
-      setShowResultModal(true)
-      if (result.success) {
-        setAttendanceStatus(prev => ({ ...prev, [selectedCourse]: true }))
-      }
-    } catch (error) {
-      console.error('Scan error:', error)
-      setScanResult({
-        success: false,
-        message: error.message || 'Gagal melakukan scan wajah',
-        timestamp: new Date().toLocaleTimeString('id-ID')
-      })
-      setShowResultModal(true)
-    } finally {
-      setIsScanning(false)
-    }
+  // Validasi awal yang tidak perlu try-catch (hanya mengubah state UI)
+  if (!cameraReady) {
+    setCameraError('Kamera belum siap, tunggu sebentar...');
+    return;
   }
+  if (attendanceStatus[selectedCourse]) {
+    setScanResult({
+      success: false,
+      message: 'Anda sudah melakukan absensi hari ini untuk mata kuliah ini',
+      timestamp: new Date().toLocaleTimeString('id-ID')
+    });
+    setShowResultModal(true);
+    return;
+  }
+  if (!activeMeeting) {
+    setScanResult({
+      success: false,
+      message: 'Belum ada sesi absensi yang dibuka oleh dosen untuk mata kuliah ini',
+      timestamp: new Date().toLocaleTimeString('id-ID')
+    });
+    setShowResultModal(true);
+    return;
+  }
+
+  setIsScanning(true);
+  setCameraError('');
+
+  try {
+    // Ambil frame
+    const frames = await captureMultipleFrames(15, 700);
+    if (frames.length < 10) {
+      throw new Error('Gagal mengambil cukup frame (kurang dari 10)');
+    }
+
+    // Ambil lokasi
+    let position;
+    try {
+      position = await getLocation();
+    } catch (locError) {
+      throw new Error('Tidak dapat mengakses lokasi. Pastikan GPS aktif dan izinkan akses lokasi.');
+    }
+    const { latitude, longitude } = position.coords;
+
+    // Kirim ke backend
+    const result = await takeAttendance(frames, latitude, longitude);
+
+    setScanResult(result);
+    setShowResultModal(true);
+    if (result.success) {
+      setAttendanceStatus(prev => ({ ...prev, [selectedCourse]: true }));
+    }
+  } catch (error) {
+    console.error('Full error:', error);
+    let userMessage = error.message || 'Gagal melakukan scan wajah';
+    if (userMessage.includes('Liveness detection gagal')) {
+      userMessage = '❌ Liveness detection gagal.\n\nPastikan Anda:\n• Berkedip secara alami\n• Menggerakkan kepala sedikit (angguk/geleng)\n• Pencahayaan cukup\n• Wajah terlihat jelas\n\nSilakan coba lagi.';
+    }
+    setScanResult({
+      success: false,
+      message: userMessage,
+      timestamp: new Date().toLocaleTimeString('id-ID')
+    });
+    setShowResultModal(true);
+  } finally {
+    setIsScanning(false);
+  }
+};
 
   const handleCloseModal = () => {
     setShowResultModal(false)
@@ -399,6 +442,12 @@ export default function FaceRecognitionPage({ onNavigate, userName }) {
               </p>
             </div>
           )}
+          {/* instruksi liveness detection */}
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-blue-800 font-semibold">Instruksi Liveness:</p>
+            <p className="text-blue-700 mt-1">{livenessInstruction}</p>
+            <p className="text-xs text-blue-500 mt-2">Ikuti instruksi di atas saat proses scan</p>
+          </div>
 
           {/* Tombol Scan */}
           <button
@@ -430,7 +479,7 @@ export default function FaceRecognitionPage({ onNavigate, userName }) {
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
       {showResultModal && scanResult && (
-        <Modal onClose={handleCloseModal}>
+        <Modal isOpen={true} onClose={handleCloseModal}>
           <div className="w-full max-w-md text-center">
             {scanResult.success ? (
               <>
@@ -458,6 +507,7 @@ export default function FaceRecognitionPage({ onNavigate, userName }) {
           </div>
         </Modal>
       )}
+      <Footer role="mahasiswa" onNavigate={onNavigate}/>
     </div>
   )
 }

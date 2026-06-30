@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { apiFetch } from '../utils/api';
 import { EXPRESS_API_URL } from '../config';
+import Footer from '../components/Footer';
+import logoSTTP from '../assets/logostt.png';
 
 export default function DosenDashboard({ 
   onNavigate, 
@@ -10,16 +12,67 @@ export default function DosenDashboard({
   onLogout, 
   onEnableManualAbsen, 
   manualAbsenEnabled,
-  userId
+  userId,
+  userData 
 }) {
   console.log('DosenDashboard rendered, userId:', userId);
   const [courses, setCourses] = useState([]);
   const [activeMeeting, setActiveMeeting] = useState({});
   const [selectedPertemuan, setSelectedPertemuan] = useState({});
 
+  // ⭐ Fungsi untuk menentukan periode akademik aktif (sama seperti di backend)
+  const getCurrentAcademicPeriod = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1; // 1=Jan, 12=Des
+
+    let tahun_ajaran, jenis_semester;
+
+    // Aturan STTP:
+    // Ganjil : Oktober (10) – Februari (2)
+    // Genap  : April (4) – Agustus (8)
+    if (month >= 10 && month <= 12) {
+      tahun_ajaran = `${year}/${year + 1}`;
+      jenis_semester = 'ganjil';
+    } else if (month >= 1 && month <= 2) {
+      tahun_ajaran = `${year - 1}/${year}`;
+      jenis_semester = 'ganjil';
+    } else if (month >= 4 && month <= 8) {
+      tahun_ajaran = `${year - 1}/${year}`;
+      jenis_semester = 'genap';
+    } else {
+      // Bulan transisi: Maret (3) dan September (9) -> fallback ke genap
+      tahun_ajaran = `${year - 1}/${year}`;
+      jenis_semester = 'genap';
+    }
+
+    return { tahun_ajaran, jenis_semester };
+  };
+
+  // ⭐ Filter courses berdasarkan periode aktif
+  const activePeriod = useMemo(() => getCurrentAcademicPeriod(), []);
+  const activeCourses = useMemo(() => {
+    return courses.filter(course => {
+      // Jika course tidak memiliki field tahun_ajaran atau jenis_semester (data lama), maka tidak ditampilkan
+      if (!course.tahun_ajaran || !course.jenis_semester) return false;
+      // Bandingkan dengan periode aktif
+      return course.tahun_ajaran === activePeriod.tahun_ajaran && 
+             course.jenis_semester === activePeriod.jenis_semester;
+    });
+  }, [courses, activePeriod]);
+
   useEffect(() => {
     if (userId) fetchCourses();
     else console.warn('DosenDashboard: userId tidak tersedia');
+    
+    const handlePageShow = (event) => {
+      if (event.persisted && userId) {
+        console.log('Page restored from bfcache, refreshing courses');
+        fetchCourses();
+      }
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
   }, [userId]);
 
   const fetchCourses = async () => {
@@ -67,69 +120,94 @@ export default function DosenDashboard({
   };
 
   const closeMeeting = async (meetingId, courseId) => {
-  try {
-    const res = await apiFetch(`${EXPRESS_API_URL}/meetings/close/${meetingId}`, { method: 'PUT' });
-    if (res.ok) {
-      alert('Sesi ditutup');
-      setActiveMeeting(prev => {
-        const newState = { ...prev };
-        delete newState[courseId];
-        return newState;
-      });
-    } else {
-      const err = await res.json();
-      alert(err.message || 'Gagal menutup sesi');
+    console.log('Token saat tutup:', sessionStorage.getItem('token'));
+    try {
+      const res = await apiFetch(`${EXPRESS_API_URL}/meetings/close/${meetingId}`, { method: 'PUT' });
+      if (res.ok) {
+        alert('Sesi ditutup');
+        setActiveMeeting(prev => {
+          const newState = { ...prev };
+          delete newState[courseId];
+          return newState;
+        });
+      } else {
+        const err = await res.json();
+        alert(err.message || 'Gagal menutup sesi');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Gagal menutup sesi');
     }
-  } catch (err) {
-    console.error(err);
-    alert('Gagal menutup sesi');
-  }
-};
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Selamat datang, {userName}</h1>
-            <p className="text-gray-600 mt-1">Website Absensi STTP</p>
-          </div>
-          <button
-            onClick={onLogout}
-            className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-lg transition"
-          >
-            Logout
-          </button>
-        </div>
-      </header>
+  <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    {/* Bagian Kiri: Logo & Info */}
+    <div>
+      <div className="flex items-center gap-3">
+        <img
+                      src={logoSTTP}
+                      alt="Logo STT Pati"
+                      className="w-14 h-14 md:w-16 md:h-16 object-contain flex-shrink-0"
+                    />
+        <h1 className="text-2xl sm:text-[48px] font-bold text-blue-700 tracking-tight">
+          SIPATI
+        </h1>
+        {/* <span className="bg-blue-100 text-blue-700 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+          v1.0
+        </span> */}
+      </div>
+      <p className="text-sm sm:text-base text-gray-500 font-medium mt-0.5">
+        Sistem Informasi Presensi STT Pati
+      </p>
+      <p className="text-sm sm:text-base text-gray-600 mt-1">
+        Selamat datang,{' '}
+        <span className="font-semibold text-gray-800">
+          {userName}
+          {userData?.gelar ? `, ${userData.gelar}` : ''}
+        </span>
+      </p>
+    </div>
+
+    {/* Bagian Kanan: Tombol Logout */}
+    <button
+      onClick={onLogout}
+      className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-lg transition text-sm shadow-sm hover:shadow-md flex-shrink-0 self-start sm:self-center"
+    >
+      Logout
+    </button>
+  </div>
+</header>
 
       <main className="max-w-7xl mx-auto px-4 py-12">
-        <div className="mb-8">
-          <button
-            onClick={onEnableManualAbsen}
-            className={`font-semibold py-3 px-6 rounded-lg transition ${
-              manualAbsenEnabled
-                ? 'bg-green-600 hover:bg-green-700 text-white'
-                : 'bg-yellow-600 hover:bg-yellow-700 text-white'
-            }`}
-          >
-            {manualAbsenEnabled ? '✓ Absen Manual Aktif' : 'Aktifkan Absen Manual'}
-          </button>
+        {/* ⭐ Tampilkan informasi periode aktif */}
+        <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <p className="text-indigo-800">
+            <span className="font-semibold">Periode Akademik Aktif:</span> {activePeriod.jenis_semester.charAt(0).toUpperCase() + activePeriod.jenis_semester.slice(1)} {activePeriod.tahun_ajaran}
+          </p>
         </div>
 
-        {courses.length === 0 ? (
+        {activeCourses.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg shadow">
-            <p className="text-gray-500">Anda belum diampu mata kuliah apapun.</p>
+            <p className="text-gray-500">Tidak ada mata kuliah untuk periode akademik saat ini.</p>
+            {courses.length > 0 && (
+              <p className="text-sm text-gray-400 mt-2">
+                * Anda memiliki {courses.length} mata kuliah, tetapi tidak ada yang sesuai dengan periode aktif.
+              </p>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {courses.map((course) => (
+            {activeCourses.map((course) => (
               <div key={course._id} className="bg-white rounded-lg shadow overflow-hidden hover:shadow-lg transition border-t-4 border-indigo-600">
                 <div className="p-6">
                   <h3 className="text-xl font-bold text-gray-900 mb-2">{course.nama_mk}</h3>
                   <div className="space-y-1 text-sm text-gray-600">
                     <p><span className="font-semibold">Kode:</span> {course.kode_mk}</p>
                     <p><span className="font-semibold">SKS:</span> {course.sks || '-'}</p>
+                    <p><span className="font-semibold">Semester:</span> {course.semester || '-'}</p>
                     <p><span className="font-semibold">Jadwal:</span> {course.hari} {course.jam_mulai} - {course.jam_selesai}</p>
                     <p><span className="font-semibold">Ruangan:</span> {course.ruangan}</p>
                   </div>
@@ -179,65 +257,8 @@ export default function DosenDashboard({
             ))}
           </div>
         )}
-
-        <div className="mt-12 bg-white rounded-lg shadow-lg p-8 border-l-4 border-indigo-600">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Fitur Dosen</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="flex gap-4">
-              <div className="flex-shrink-0">
-                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
-                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-gray-900">Lihat Rekap Absensi</h3>
-                <p className="mt-2 text-base text-gray-600">Lihat detail kehadiran mahasiswa per pertemuan</p>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex-shrink-0">
-                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
-                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-gray-900">Edit Status Absensi</h3>
-                <p className="mt-2 text-base text-gray-600">Ubah status kehadiran mahasiswa</p>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex-shrink-0">
-                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
-                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-gray-900">Aktifkan Absen Manual</h3>
-                <p className="mt-2 text-base text-gray-600">Izinkan mahasiswa absen manual (jika diizinkan)</p>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex-shrink-0">
-                <div className="flex items-center justify-center h-12 w-12 rounded-md bg-indigo-500 text-white">
-                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-gray-900">Bantuan</h3>
-                <p className="mt-2 text-base text-gray-600">Panduan penggunaan sistem</p>
-              </div>
-            </div>
-          </div>
-        </div>
       </main>
+      <Footer role="dosen" onNavigate={onNavigate}/>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Footer from '../components/Footer';
 
 export default function MahasiswaLoginPage({ onNavigate, onLogin }) {
   const [namaMahasiswa, setNamaMahasiswa] = useState('');
@@ -41,7 +42,8 @@ export default function MahasiswaLoginPage({ onNavigate, onLogin }) {
 
   // ——— Sisanya persis kode asli Anda, tidak ada yang diubah ———
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-white to-teal-50 flex items-center justify-center p-4 md:p-6">
+    <>
+    <div className="min-h-screen flex items-center justify-center p-4 md:p-6">
       <div className="w-full max-w-md mx-auto">
         <div className="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-teal-100 relative">
           {/* Back Button */}
@@ -198,5 +200,7 @@ export default function MahasiswaLoginPage({ onNavigate, onLogin }) {
         </div>
       </div>
     </div>
+    <Footer onNavigate={onNavigate}/>
+    </>
   );
 }

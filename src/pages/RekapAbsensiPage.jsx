@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { apiFetch } from '../utils/api';
+import { FASTAPI_API_URL, EXPRESS_API_URL } from '../config';
+import Footer from '../components/Footer';
+import logoSTTP from '../assets/logostt.png';
 
 export default function RekapAbsensiPage({ onNavigate, userRole, userId, selectedCourse: initialCourse }) {
   // State untuk mata kuliah (dropdown)
@@ -33,21 +36,52 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
     return pertemuanStats.map((stat, idx) => ({ pertemuan: idx + 1, ...stat }));
   };
 
-  // Ambil daftar mata kuliah berdasarkan role
+  // ⭐ Fungsi untuk menentukan periode akademik aktif
+  const getCurrentAcademicPeriod = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    if (month >= 10 && month <= 12) {
+      return { tahun_ajaran: `${year}/${year + 1}`, jenis_semester: 'ganjil' };
+    } else if (month >= 1 && month <= 2) {
+      return { tahun_ajaran: `${year - 1}/${year}`, jenis_semester: 'ganjil' };
+    } else if (month >= 4 && month <= 8) {
+      return { tahun_ajaran: `${year - 1}/${year}`, jenis_semester: 'genap' };
+    } else {
+      return { tahun_ajaran: `${year - 1}/${year}`, jenis_semester: 'genap' };
+    }
+  };
+
+  // Ambil daftar mata kuliah berdasarkan role (hanya periode aktif)
   useEffect(() => {
     const fetchCourses = async () => {
       setLoadingCourses(true);
       try {
-        let url = 'http://localhost:5000/api/courses';
+        let url = `${EXPRESS_API_URL}/courses`;
         if (userRole === 'dosen') {
-          url = `http://localhost:5000/api/courses/dosen/${userId}`;
+          url = `${EXPRESS_API_URL}/courses/dosen/${userId}`;
         }
         const res = await apiFetch(url);
         if (!res.ok) throw new Error('Gagal mengambil mata kuliah');
         const data = await res.json();
-        setCourses(data);
-        if (!selectedCourse && data.length > 0) {
-          setSelectedCourse(data[0].kode_mk);
+
+        const activePeriod = getCurrentAcademicPeriod();
+        const filteredData = data.filter(course => {
+          if (!course.tahun_ajaran || !course.jenis_semester) return false;
+          return course.tahun_ajaran === activePeriod.tahun_ajaran &&
+                 course.jenis_semester === activePeriod.jenis_semester;
+        });
+
+        setCourses(filteredData);
+
+        if (filteredData.length > 0) {
+          const isSelectedValid = filteredData.some(c => c.kode_mk === selectedCourse);
+          if (!isSelectedValid || !selectedCourse) {
+            setSelectedCourse(filteredData[0].kode_mk);
+          }
+        } else {
+          setSelectedCourse('');
         }
       } catch (err) {
         console.error(err);
@@ -63,7 +97,7 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
     if (!selectedCourse) return;
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/attendance-recap-by-course?course_kode=${selectedCourse}`);
+      const res = await fetch(`${FASTAPI_API_URL}/api/attendance-recap-by-course?course_kode=${selectedCourse}`);
       const data = await res.json();
       setRekapData(data);
     } catch (err) {
@@ -75,7 +109,11 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
   };
 
   useEffect(() => {
-    fetchRekap();
+    if (selectedCourse) {
+      fetchRekap();
+    } else {
+      setRekapData([]);
+    }
   }, [selectedCourse]);
 
   // Update status manual
@@ -85,7 +123,7 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
     const pertemuan = pertemuanIndex + 1;
 
     try {
-      const res = await fetch('http://localhost:8000/api/attendance/manual-update', {
+      const res = await fetch(`${FASTAPI_API_URL}/api/attendance/manual-update`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -125,27 +163,81 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
     }
   };
 
+  // Download rekap pdf
+  const downloadPdf = () => {
+    if (!selectedCourse) {
+      alert("Pilih mata kuliah terlebih dahulu");
+      return;
+    }
+    const pdfUrl = `${FASTAPI_API_URL}/api/attendance/export-pdf/${selectedCourse}`;
+    window.open(pdfUrl, "_blank");
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <button
-            onClick={() => onNavigate('dosen-dashboard')}
-            className="text-gray-600 hover:text-gray-900 font-semibold flex items-center gap-2 mb-3"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Kembali ke Dashboard
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900">Rekap Absensi Mahasiswa</h1>
-          <p className="text-gray-600 mt-2">
-            Mata Kuliah: {courseName || (courses.find(c => c.kode_mk === selectedCourse)?.nama_mk)} ({selectedCourse})
-          </p>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+        <div className="grid grid-cols-[auto,1fr,auto] items-center gap-4">
+          
+          {/* Kiri: Brand */}
+          <div className="flex items-center gap-3">
+            <img
+              src={logoSTTP}
+              alt="Logo STT Pati"
+              className="w-14 h-14 md:w-16 md:h-16 object-contain flex-shrink-0"
+            />
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl md:text-[36px] font-extrabold text-blue-700 tracking-tight">
+                  SIPATI
+                </h1>
+                <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                  {userRole === 'dosen' ? 'Dosen' : 'Mahasiswa'}
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm text-gray-500 font-medium">
+                Sistem Informasi Presensi STT Pati
+              </p>
+            </div>
+          </div>
+
+          {/* Tengah: Judul Halaman */}
+          <div className="text-center">
+            <h2 className="text-lg md:text-xl font-bold text-gray-800">
+              Rekap Absensi Mahasiswa
+            </h2>
+            {/* <p className="text-xs sm:text-sm text-gray-500">
+              {courseName || (courses.find(c => c.kode_mk === selectedCourse)?.nama_mk)} ({selectedCourse})
+            </p> */}
+          </div>
+
+          {/* Kanan: Tombol Kembali + Download PDF */}
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              onClick={() => onNavigate(userRole === 'dosen' ? 'dosen-dashboard' : 'mahasiswa-dashboard')}
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1 transition"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Kembali
+            </button>
+            <button
+              onClick={downloadPdf}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition text-sm flex items-center gap-1 whitespace-nowrap"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              PDF
+            </button>
+          </div>
+
+          </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-12">
+      <main className="flex-1 max-w-7xl mx-auto px-4 py-12 w-full">
         {/* Dropdown pilih mata kuliah */}
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center gap-4">
           <label className="text-sm font-medium text-gray-700">Ganti Mata Kuliah:</label>
@@ -153,9 +245,12 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
             value={selectedCourse}
             onChange={(e) => setSelectedCourse(e.target.value)}
             className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 w-full sm:w-auto"
-            disabled={loadingCourses}
+            disabled={loadingCourses || courses.length === 0}
           >
             {loadingCourses && <option>Memuat...</option>}
+            {courses.length === 0 && !loadingCourses && (
+              <option value="">Tidak ada mata kuliah untuk periode ini</option>
+            )}
             {courses.map((course) => (
               <option key={course.kode_mk} value={course.kode_mk}>
                 {course.nama_mk} ({course.kode_mk})
@@ -312,6 +407,8 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
           </div>
         </Modal>
       )}
+
+      <Footer role="dosen" onNavigate={onNavigate} />
     </div>
   );
 }

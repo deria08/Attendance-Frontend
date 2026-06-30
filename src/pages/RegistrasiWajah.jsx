@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import Footer from '../components/Footer';
 
-export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, onRegisterFace, userId }) {
+export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, onRegisterFace, userId, nim }) {
   const [isLoading, setIsLoading] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
@@ -14,7 +15,9 @@ export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, o
   const streamRef = useRef(null);
   const videoReadyCheckRef = useRef(null);
 
-  const currentMahasiswa = mahasiswaList.find(m => m.nim === userId);
+  // Tidak perlu mencari currentMahasiswa karena userId adalah ObjectId, bukan NIM.
+  // Halaman ini hanya diakses jika mahasiswa belum registrasi, jadi isAlreadyRegistered selalu false.
+  const isAlreadyRegistered = false;
 
   useEffect(() => {
     return () => {
@@ -107,55 +110,51 @@ export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, o
   };
 
   const handleCapturePhoto = async () => {
-  const video = videoRef.current;
-  const canvas = canvasRef.current;
-  if (!video || !canvas) {
-    setErrorMessage('Kamera belum tersedia');
-    return;
-  }
-  if (!cameraReady) {
-    setErrorMessage('Kamera masih memuat, tunggu sebentar...');
-    return;
-  }
-  try {
-    await waitForVideoReady();
-    
-    const videoWidth = video.videoWidth;
-    const videoHeight = video.videoHeight;
-    if (videoWidth === 0 || videoHeight === 0) {
-      throw new Error('Video dimensions are zero');
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) {
+      setErrorMessage('Kamera belum tersedia');
+      return;
     }
-    
-    // Tentukan ukuran crop persegi (sesuai overlay lingkaran)
-    const cropSize = 400; // atau lebih besar, misal 400
-    // Hitung area tengah video
-    const centerX = videoWidth / 2;
-    const centerY = videoHeight / 2;
-    const startX = Math.max(0, centerX - cropSize / 2);
-    const startY = Math.max(0, centerY - cropSize / 2);
-    const actualCropWidth = Math.min(cropSize, videoWidth - startX);
-    const actualCropHeight = Math.min(cropSize, videoHeight - startY);
-    
-    // Set canvas ukuran crop (persegi)
-    canvas.width = actualCropWidth;
-    canvas.height = actualCropHeight;
-    
-    const context = canvas.getContext('2d');
-    context.drawImage(
-      video,
-      startX, startY, actualCropWidth, actualCropHeight,
-      0, 0, actualCropWidth, actualCropHeight
-    );
-    
-    // Tingkatkan kualitas JPEG
-    const photoData = canvas.toDataURL('image/jpeg', 0.9);
-    setCapturedPhoto(photoData);
-    setErrorMessage('');
-  } catch (err) {
-    console.error('Capture error:', err);
-    setErrorMessage('Gagal mengambil foto. Pastikan kamera sudah aktif dan coba lagi.');
-  }
-};
+    if (!cameraReady) {
+      setErrorMessage('Kamera masih memuat, tunggu sebentar...');
+      return;
+    }
+    try {
+      await waitForVideoReady();
+
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+      if (videoWidth === 0 || videoHeight === 0) {
+        throw new Error('Video dimensions are zero');
+      }
+
+      const cropSize = 400;
+      const centerX = videoWidth / 2;
+      const centerY = videoHeight / 2;
+      const startX = Math.max(0, centerX - cropSize / 2);
+      const startY = Math.max(0, centerY - cropSize / 2);
+      const actualCropWidth = Math.min(cropSize, videoWidth - startX);
+      const actualCropHeight = Math.min(cropSize, videoHeight - startY);
+
+      canvas.width = actualCropWidth;
+      canvas.height = actualCropHeight;
+
+      const context = canvas.getContext('2d');
+      context.drawImage(
+        video,
+        startX, startY, actualCropWidth, actualCropHeight,
+        0, 0, actualCropWidth, actualCropHeight
+      );
+
+      const photoData = canvas.toDataURL('image/jpeg', 0.9);
+      setCapturedPhoto(photoData);
+      setErrorMessage('');
+    } catch (err) {
+      console.error('Capture error:', err);
+      setErrorMessage('Gagal mengambil foto. Pastikan kamera sudah aktif dan coba lagi.');
+    }
+  };
 
   const handleRetake = () => {
     setCapturedPhoto(null);
@@ -163,44 +162,40 @@ export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, o
   };
 
   const handleSaveWajah = async () => {
-  if (!capturedPhoto) return;
+    if (!capturedPhoto) return;
 
-  setIsLoading(true);
-  setErrorMessage('');
-  setSuccessMessage('');
+    setIsLoading(true);
+    setErrorMessage('');
+    setSuccessMessage('');
 
-  try {
-    // Konversi dataURL ke Blob dengan kualitas lebih baik
-    const blob = await (await fetch(capturedPhoto)).blob();
-    console.log('Ukuran gambar:', blob.size, 'bytes'); // debug
+    try {
+      const blob = await (await fetch(capturedPhoto)).blob();
+      console.log('Ukuran gambar:', blob.size, 'bytes');
 
-    const formData = new FormData();
-    formData.append('name', userName);           // <- name sebagai form field
-    formData.append('file', blob, 'face.jpg');
+      const formData = new FormData();
+      formData.append('name', userName);
+      formData.append('file', blob, 'face.jpg');
 
-    const response = await fetch('http://127.0.0.1:8000/api/register-face', {
-      method: 'POST',
-      body: formData,
-    });
+      const response = await fetch('http://127.0.0.1:8000/api/register-face', {
+        method: 'POST',
+        body: formData,
+      });
 
-    const data = await response.json();
-    if (!response.ok || data.error) {
-      throw new Error(data.error || 'Registrasi gagal');
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Registrasi gagal');
+      }
+
+      setSuccessMessage('Wajah berhasil didaftarkan!');
+      onRegisterFace(userId, capturedPhoto);
+      setTimeout(() => onNavigate('mahasiswa-dashboard'), 1500);
+    } catch (err) {
+      console.error(err);
+      setErrorMessage(err.message || 'Gagal registrasi wajah');
+    } finally {
+      setIsLoading(false);
     }
-
-    setSuccessMessage('Wajah berhasil didaftarkan!');
-    onRegisterFace(userId, capturedPhoto);
-    setTimeout(() => onNavigate('mahasiswa-dashboard'), 1500);
-  } catch (err) {
-    console.error(err);
-    setErrorMessage(err.message || 'Gagal registrasi wajah');
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-  // Jika wajah sudah terdaftar, tampilkan pesan dan tidak perlu registrasi ulang
-  const isAlreadyRegistered = currentMahasiswa?.face_registered;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -231,18 +226,8 @@ export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, o
             </div>
             <div>
               <p className="text-gray-600 text-sm">NIM</p>
-              <p className="text-lg font-semibold text-gray-900 mt-1">{currentMahasiswa?.nim || '-'}</p>
+              <p className="text-lg font-semibold text-gray-900 mt-1">{nim || userId || '-'}</p>
             </div>
-            {isAlreadyRegistered && (
-              <div className="md:col-span-2 bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-green-700 flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  Wajah Anda sudah terdaftar di sistem
-                </p>
-              </div>
-            )}
           </div>
         </div>
 
@@ -349,6 +334,7 @@ export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, o
           </ul>
         </div>
       </main>
+      <Footer role="mahasiswa" onNavigate={onNavigate}/>
     </div>
   );
 }

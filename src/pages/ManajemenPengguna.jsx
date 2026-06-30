@@ -2,6 +2,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react'
 import Modal from '../components/Modal'
+import Footer from '../components/Footer';
+import logoSTTP from '../assets/logostt.png';
 
 export default function ManajemenPengguna({ 
   mahasiswaList, 
@@ -13,11 +15,15 @@ export default function ManajemenPengguna({
   onAddDosen, 
   onEditDosen, 
   onDeleteDosen,
-  faceStatus,      // ← terima prop
-  onResetFace      // ← terima prop
+  faceStatus,
+  onResetFace
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterRole, setFilterRole] = useState('semua')
+  const [filterProdi, setFilterProdi] = useState('')
+  const [filterSemester, setFilterSemester] = useState('')
+  const [sortBy, setSortBy] = useState('nama')
+  const [sortOrder, setSortOrder] = useState('asc')
   const [currentPage, setCurrentPage] = useState(1)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -27,6 +33,7 @@ export default function ManajemenPengguna({
 
   const itemsPerPage = 10
 
+  // Data user
   const allUsers = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     const mahasiswaUsers = (mahasiswaList || []).map(m => ({
@@ -34,41 +41,116 @@ export default function ManajemenPengguna({
       originalId: m.id,
       nama: m.nama || 'Tanpa Nama',
       username: m.nim || '-',
-      email: m.email || '-',
+      email: m.email === '-' ? '' : (m.email || ''),
       role: 'Mahasiswa',
       tanggalDibuat: today,
       status: m.status || 'Tidak Aktif',
       face_registered: faceStatus?.[m.nim] || false,
-      prodi: m.prodi || '',         // ← tambah
-      semester: m.semester || ''    // ← tambah
+      prodi: m.prodi || '',
+      semester: String(m.semester || '')  // ⭐ pastikan string
     }));
     const dosenUsers = (dosenList || []).map(d => ({
       id: `dsn_${d.id}`,
       originalId: d.id,
       nama: d.nama || 'Tanpa Nama',
       username: d.nidn || '-',
-      email: d.email || '-',
+      email: d.email === '-' ? '' : (d.email || ''),
       role: 'Dosen',
       tanggalDibuat: today,
       status: d.status || 'Tidak Aktif',
+      gelar: d.gelar || '',
+      prodi: '-',
+      semester: '-'
     }));
     return [...mahasiswaUsers, ...dosenUsers];
   }, [mahasiswaList, dosenList, faceStatus]);
 
-  const filteredUsers = useMemo(() => {
-    return allUsers.filter(user => {
+  // Ambil daftar prodi dan semester unik (hanya dari mahasiswa)
+  const prodiOptions = useMemo(() => {
+    const prodis = allUsers
+      .filter(u => u.role === 'Mahasiswa' && u.prodi)
+      .map(u => u.prodi);
+    return ['', ...new Set(prodis)];
+  }, [allUsers]);
+
+  const semesterOptions = useMemo(() => {
+    const semesters = allUsers
+      .filter(u => u.role === 'Mahasiswa' && u.semester)
+      .map(u => u.semester);
+    // urutkan ascending
+    return ['', ...new Set(semesters)].sort((a, b) => {
+      if (a === '') return -1;
+      if (b === '') return 1;
+      return Number(a) - Number(b);
+    });
+  }, [allUsers]);
+
+  // Filter & Sort
+  const filteredAndSortedUsers = useMemo(() => {
+    let result = allUsers.filter(user => {
       const searchLower = searchQuery.toLowerCase()
       const matchesSearch =
+        !searchQuery ||
         (user.nama?.toLowerCase().includes(searchLower) ?? false) ||
         (user.username?.toLowerCase().includes(searchLower) ?? false) ||
         (user.email?.toLowerCase().includes(searchLower) ?? false)
-      const matchesRole = filterRole === 'semua' || user.role?.toLowerCase() === filterRole.toLowerCase()
-      return matchesSearch && matchesRole
-    })
-  }, [allUsers, searchQuery, filterRole])
 
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage)
-  const paginatedUsers = filteredUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+      const matchesRole = filterRole === 'semua' || user.role?.toLowerCase() === filterRole.toLowerCase()
+
+      // ⭐ Filter Prodi dan Semester (perbaikan perbandingan)
+      let matchesProdiSemester = true
+      if (filterProdi || filterSemester) {
+        if (user.role !== 'Mahasiswa') {
+          matchesProdiSemester = false
+        } else {
+          if (filterProdi && user.prodi !== filterProdi) matchesProdiSemester = false
+          if (filterSemester && String(user.semester) !== filterSemester) matchesProdiSemester = false
+        }
+      }
+
+      return matchesSearch && matchesRole && matchesProdiSemester
+    })
+
+    // Sorting
+    const fieldMap = {
+      nama: 'nama',
+      username: 'username',
+      role: 'role',
+      prodi: 'prodi',
+      semester: 'semester',
+      status: 'status',
+      tanggalDibuat: 'tanggalDibuat'
+    };
+    const field = fieldMap[sortBy] || 'nama';
+    result.sort((a, b) => {
+      let valA = a[field] || '';
+      let valB = b[field] || '';
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [allUsers, searchQuery, filterRole, filterProdi, filterSemester, sortBy, sortOrder]);
+
+  const totalPages = Math.ceil(filteredAndSortedUsers.length / itemsPerPage)
+  const paginatedUsers = filteredAndSortedUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterRole, filterProdi, filterSemester, sortBy, sortOrder]);
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setFilterRole('semua');
+    setFilterProdi('');
+    setFilterSemester('');
+    setSortBy('nama');
+    setSortOrder('asc');
+    setCurrentPage(1);
+  };
 
   const handleAddUser = (formData) => {
     if (formData.role === 'Mahasiswa') {
@@ -77,8 +159,8 @@ export default function ManajemenPengguna({
         nim: formData.username,
         email: formData.email,
         status: 'Aktif',
-        prodi: formData.prodi,      // tambahkan
-        semester: formData.semester // tambahkan
+        prodi: formData.prodi,
+        semester: formData.semester
       })
     } else {
       onAddDosen({
@@ -86,6 +168,7 @@ export default function ManajemenPengguna({
         nidn: formData.username,
         email: formData.email,
         status: 'Aktif',
+        gelar: formData.gelar
       })
     }
     setFeedbackMessage('User berhasil ditambahkan')
@@ -99,14 +182,15 @@ export default function ManajemenPengguna({
         nama: formData.nama,
         nim: formData.username,
         email: formData.email,
-        prodi: formData.prodi,      // tambahkan
-        semester: formData.semester // tambahkan
+        prodi: formData.prodi,
+        semester: formData.semester
       })
     } else {
       onEditDosen(editingUser.originalId, {
         nama: formData.nama,
         nidn: formData.username,
         email: formData.email,
+        gelar: formData.gelar
       })
     }
     setFeedbackMessage('User berhasil diupdate')
@@ -126,21 +210,57 @@ export default function ManajemenPengguna({
     setTimeout(() => setFeedbackMessage(''), 3000)
   }
 
+  const toggleSortOrder = () => {
+    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <button
-            onClick={() => onNavigate('admin-dashboard')}
-            className="text-gray-600 hover:text-gray-900 font-semibold flex items-center gap-2 mb-3"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Kembali
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900">Manajemen Pengguna</h1>
-          <p className="text-gray-600 mt-1">Kelola data akun mahasiswa dan dosen dalam sistem</p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <div className="grid grid-cols-[auto,1fr,auto] items-center gap-4">
+            <div className="flex items-center gap-3">
+              <img 
+                src={logoSTTP} 
+                alt="Logo STT Pati" 
+                className="w-14 h-14 md:w-16 md:h-16 object-contain flex-shrink-0" 
+              />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl md:text-[36px] font-extrabold text-blue-700 tracking-tight">
+                    SIPATI
+                  </h1>
+                  <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                    Admin
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-gray-500 font-medium">
+                  Sistem Informasi Presensi STT Pati
+                </p>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <h2 className="text-lg md:text-xl font-bold text-gray-800">
+                Kelola Akun
+              </h2>
+              <p className="text-xs sm:text-sm text-gray-500">
+                Kelola Akun untuk Dosen dan Mahasiswa
+              </p>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => onNavigate('admin-dashboard')}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Kembali
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -151,23 +271,24 @@ export default function ManajemenPengguna({
           </div>
         )}
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Cari Pengguna</label>
               <input
                 type="text"
                 placeholder="Nama atau username..."
                 value={searchQuery}
-                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Filter Role</label>
               <select
                 value={filterRole}
-                onChange={(e) => { setFilterRole(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => setFilterRole(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="semua">Semua</option>
@@ -175,17 +296,81 @@ export default function ManajemenPengguna({
                 <option value="dosen">Dosen</option>
               </select>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Prodi</label>
+              <select
+                value={filterProdi}
+                onChange={(e) => setFilterProdi(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={filterRole === 'dosen'}
+              >
+                {prodiOptions.map(prodi => (
+                  <option key={prodi || 'all'} value={prodi}>{prodi || 'Semua Prodi'}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Semester</label>
+              <select
+                value={filterSemester}
+                onChange={(e) => setFilterSemester(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={filterRole === 'dosen'}
+              >
+                {semesterOptions.map(sem => (
+                  <option key={sem || 'all'} value={sem}>{sem || 'Semua Semester'}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Urutkan Berdasarkan</label>
+              <div className="flex gap-2">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="nama">Nama</option>
+                  {/* <option value="username">NIM/NIDN</option> */}
+                  {/* <option value="role">Role</option> */}
+                  <option value="prodi">Prodi</option>
+                  <option value="semester">Semester</option>
+                  {/* <option value="status">Status</option> */}
+                  {/* <option value="tanggalDibuat">Tanggal Dibuat</option> */}
+                </select>
+                <button
+                  onClick={toggleSortOrder}
+                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+                >
+                  {sortOrder === 'asc' ? '↑' : '↓'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end">
             <button
-              onClick={() => { setEditingUser(null); setIsAddModalOpen(true); }}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition flex items-center justify-center gap-2"
+              onClick={resetFilters}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-6 rounded-lg transition"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Tambah User
+              Reset Filter
             </button>
           </div>
         </div>
+
+        <button
+          onClick={() => { setEditingUser(null); setIsAddModalOpen(true); }}
+          className="mb-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition flex items-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Tambah User
+        </button>
 
         {paginatedUsers.length > 0 ? (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -194,7 +379,9 @@ export default function ManajemenPengguna({
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Nama</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">NIM / NIDN</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">
+                      {filterRole === 'mahasiswa' ? 'NIM' : filterRole === 'dosen' ? 'NIDN/NUPTK' : 'NIM / NIDN'}
+                    </th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Email</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Role</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Prodi</th>
@@ -210,7 +397,7 @@ export default function ManajemenPengguna({
                     <tr key={user.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-6 py-4 text-sm text-gray-900 font-medium">{user.nama}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{user.username}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{user.email}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{user.email || '-'}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
                           user.role === 'Mahasiswa' ? 'bg-blue-100 text-blue-700' : 'bg-indigo-100 text-indigo-700'
@@ -225,7 +412,6 @@ export default function ManajemenPengguna({
                         {user.role === 'Mahasiswa' ? (user.semester || '-') : '-'}
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        {/* status badge - sama seperti sebelumnya */}
                         <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
                           user.status === 'Aktif' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                         }`}>
@@ -233,12 +419,11 @@ export default function ManajemenPengguna({
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        {/* registrasi wajah - sama seperti sebelumnya */}
                         {user.role === 'Mahasiswa' ? (
                           user.face_registered ? (
                             <div className="flex items-center gap-2">
                               <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">Sudah</span>
-                              <button onClick={() => onResetFace?.(user.username, user.nama)} className="text-red-600 hover:text-red-800 text-sm underline">Reset</button>
+                              <button onClick={() => onResetFace?.(user.originalId, user.nama)} className="text-red-600 hover:text-red-800 text-sm underline">Reset</button>
                             </div>
                           ) : (
                             <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">Belum</span>
@@ -296,18 +481,14 @@ export default function ManajemenPengguna({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.856-1.487M15 10a3 3 0 11-6 0 3 3 0 016 0zM6 20a9 9 0 0118 0v2h2v-2a11 11 0 10-20 0v2h2v-2z" />
             </svg>
             <p className="text-gray-500 text-lg mb-4">Belum ada data pengguna</p>
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition"
-            >
-              Tambah User
-            </button>
           </div>
         )}
         <p className="text-sm text-gray-500 mt-4">
-          Menampilkan {paginatedUsers.length} dari {filteredUsers.length} pengguna
+          Menampilkan {paginatedUsers.length} dari {filteredAndSortedUsers.length} pengguna
         </p>
       </main>
+
+      <Footer role="admin" onNavigate={onNavigate} />
 
       {(isAddModalOpen || isEditModalOpen) && (
         <UserFormModal
@@ -334,35 +515,39 @@ export default function ManajemenPengguna({
   )
 }
 
+// ===================== UserFormModal =====================
 function UserFormModal({ isOpen, isEdit, user, onClose, onSubmit }) {
   const [formData, setFormData] = useState({
     nama: '',
     username: '',
     email: '',
     role: 'Mahasiswa',
-    prodi: '',      // tambah
-    semester: ''    // tambah
+    prodi: '',
+    semester: '',
+    gelar: ''
   });
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
     if (isEdit && user) {
-    setFormData({
-      nama: user.nama || '',
-      username: user.username || '',
-      email: user.email || '',
-      role: user.role || 'Mahasiswa',
-      prodi: user.prodi || '',
-      semester: user.semester || ''
-    });
+      setFormData({
+        nama: user.nama || '',
+        username: user.username || '',
+        email: user.email || '',
+        role: user.role || 'Mahasiswa',
+        prodi: user.prodi || '',
+        semester: user.semester || '',
+        gelar: user.gelar || ''
+      });
     } else {
-      setFormData({ 
-        nama: '', 
-        username: '', 
-        email: '', 
-        role: 'Mahasiswa', 
-        prodi: '', 
-        semester: '' 
+      setFormData({
+        nama: '',
+        username: '',
+        email: '',
+        role: 'Mahasiswa',
+        prodi: '',
+        semester: '',
+        gelar: ''
       });
     }
     setErrors({});
@@ -372,7 +557,6 @@ function UserFormModal({ isOpen, isEdit, user, onClose, onSubmit }) {
     const newErrors = {}
     if (!formData.nama.trim()) newErrors.nama = 'Nama wajib diisi'
     if (!formData.username.trim()) newErrors.username = 'Username wajib diisi'
-    if (!formData.email.trim()) newErrors.email = 'Email wajib diisi'
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -406,19 +590,23 @@ function UserFormModal({ isOpen, isEdit, user, onClose, onSubmit }) {
           />
           {errors.nama && <p className="text-red-500 text-sm mt-1">{errors.nama}</p>}
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">NIM / NIDN *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {formData.role === 'Mahasiswa' ? 'NIM *' : 'NIDN/NUPTK *'}
+          </label>
           <input
             type="text"
             value={formData.username}
             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${errors.username ? 'border-red-500' : 'border-gray-300'}`}
-            placeholder="NIM untuk mahasiswa / NIDN untuk dosen"
+            placeholder={formData.role === 'Mahasiswa' ? 'Masukkan NIM' : 'Masukkan NIDN/NUPTK'}
           />
           {errors.username && <p className="text-red-500 text-sm mt-1">{errors.username}</p>}
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email (opsional)</label>
           <input
             type="email"
             value={formData.email}
@@ -428,38 +616,50 @@ function UserFormModal({ isOpen, isEdit, user, onClose, onSubmit }) {
           />
           {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
         </div>
-        {/* Prodi - hanya untuk mahasiswa */}
-          {formData.role === 'Mahasiswa'&& (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Program Studi</label>
-              <select
-                value={formData.prodi}
-                onChange={(e) => setFormData({ ...formData, prodi: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Pilih Prodi</option>
-                <option value="Informatika">Informatika</option>
-                <option value="Elektro">Elektro</option>
-                <option value="Manajemen">Manajemen</option>
-              </select>
-            </div>
-          )}
 
-          {/* Semester - hanya untuk mahasiswa */}
-          {formData.role === 'Mahasiswa' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Semester</label>
-              <input
-                type="number"
-                min="1"
-                max="8"
-                value={formData.semester}
-                onChange={(e) => setFormData({ ...formData, semester: parseInt(e.target.value) || '' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="1 - 8"
-              />
-            </div>
-          )}
+        {formData.role === 'Dosen' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Gelar Akademik</label>
+            <input
+              type="text"
+              value={formData.gelar || ''}
+              onChange={(e) => setFormData({ ...formData, gelar: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Contoh: S.Kom., M.Kom."
+            />
+          </div>
+        )}
+
+        {formData.role === 'Mahasiswa' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Program Studi</label>
+            <select
+              value={formData.prodi}
+              onChange={(e) => setFormData({ ...formData, prodi: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Pilih Prodi</option>
+              <option value="Informatika">Informatika</option>
+              <option value="Elektro">Elektro</option>
+            </select>
+          </div>
+        )}
+
+        {formData.role === 'Mahasiswa' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Semester</label>
+            <input
+              type="number"
+              min="1"
+              max="8"
+              value={formData.semester}
+              onChange={(e) => setFormData({ ...formData, semester: parseInt(e.target.value) || '' })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="1 - 8"
+            />
+          </div>
+        )}
+
         {!isEdit && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
@@ -473,6 +673,7 @@ function UserFormModal({ isOpen, isEdit, user, onClose, onSubmit }) {
             </select>
           </div>
         )}
+
         <div className="flex gap-3 justify-end pt-6 border-t">
           <button type="button" onClick={onClose} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Batal</button>
           <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">{isEdit ? 'Update' : 'Tambah'} User</button>

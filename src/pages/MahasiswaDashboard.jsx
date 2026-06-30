@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { apiFetch } from '../utils/api';
+import Footer from '../components/Footer';
+import logoSTTP from '../assets/logostt.png'
 
 export default function MahasiswaDashboard({ 
   onNavigate, 
@@ -8,42 +10,104 @@ export default function MahasiswaDashboard({
   manualAbsenEnabled, 
   mahasiswaList, 
   userData,
-  userId
+  userId,
+  faceStatus
 }) {
-  const [isFaceRegistered, setIsFaceRegistered] = useState(false);
+  // const [isFaceRegistered, setIsFaceRegistered] = useState(false);
+  const isFaceRegistered =
+  faceStatus?.[userData?.nim_nidn] || false;
+  const [attendanceRate, setAttendanceRate] = useState(0); // ← tambah state
   
+  // useEffect(() => {
+  //   const fetchFaceStatus = async () => {
+  //     try {
+  //       const res = await apiFetch('http://localhost:5000/api/users/mahasiswa/face-status');
+  //       const data = await res.json();
+  //       const nim = userData?.nim_nidn;
+  //       if (nim) {
+  //         const found = data.find(item => item.nim === nim);
+  //         setIsFaceRegistered(found?.face_registered || false);
+  //       }
+  //     } catch (err) {
+  //       console.error('Gagal fetch face status:', err);
+  //     }
+  //   };
+  //   if (userData?.nim_nidn) fetchFaceStatus();
+  // }, [userData]);
+   // Ambil statistik kehadiran
   useEffect(() => {
-    const fetchFaceStatus = async () => {
+    const fetchStats = async () => {
+      if (!userId) return;
       try {
-        const res = await apiFetch('http://localhost:5000/api/users/mahasiswa/face-status');
+        // Gunakan FASTAPI_API_URL dari environment variable
+        const baseUrl = import.meta.env.VITE_FASTAPI_API_URL || 'http://localhost:8000';
+        const res = await fetch(`${baseUrl}/api/attendance-stats?user_id=${userId}`);
         const data = await res.json();
-        const nim = userData?.nim_nidn;
-        if (nim) {
-          const found = data.find(item => item.nim === nim);
-          setIsFaceRegistered(found?.face_registered || false);
+        if (data.attendance_rate !== undefined) {
+          setAttendanceRate(data.attendance_rate);
         }
       } catch (err) {
-        console.error('Gagal fetch face status:', err);
+        console.error('Gagal mengambil statistik kehadiran:', err);
       }
     };
-    if (userData?.nim_nidn) fetchFaceStatus();
-  }, [userData]);
+    fetchStats();
+  }, [userId]);
+
   const currentMahasiswa = mahasiswaList?.find(m => m.id === userId);
   // Jika data belum ada, tampilkan loading (opsional)
 //   if (!currentMahasiswa) {
 //     return <div className="text-center py-12">Memuat data mahasiswa...</div>;
 // }
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b border-gray-200">
+    <div className="min-h-screen">
+      {/* <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Selamat datang, {userName}</h1>
-            <p className="text-gray-600 mt-1">Website Absensi STTP</p>
+            <h1 className="text-[36px] font-bold text-gray-900">Selamat Datang Di Website Absensi STTPati </h1>
+            <p className="mt-4 text-gray-600 text-[24px]">Mahasiswa: {userName}</p>
           </div>
           <button
             onClick={onLogout}
-            className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-lg transition"
+            className="bg-red-600 hover:bg-red-700 text-[18px] text-white font-semibold py-2 px-6 rounded-lg transition"
+          >
+            Logout
+          </button>
+        </div>
+      </header> */}
+      {/* ===== HEADER (SAMA DENGAN DOSEN DASHBOARD) ===== */}
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          {/* Bagian Kiri: Logo & Info */}
+          <div>
+            <div className="flex items-center gap-3">
+              <img
+                src={logoSTTP}
+                alt="Logo STT Pati"
+                className="w-14 h-14 md:w-16 md:h-16 object-contain flex-shrink-0"
+              />        
+              <h1 className="text-2xl sm:text-[48px] font-bold text-blue-700 tracking-tight">
+                SIPATI
+              </h1>
+              {/* <span className="bg-blue-100 text-blue-700 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                v1.0
+              </span> */}
+            </div>
+            <p className="text-sm sm:text-base text-gray-500 font-medium mt-0.5">
+              Sistem Informasi Presensi STT Pati
+            </p>
+            <p className="text-sm sm:text-base text-gray-600 mt-1">
+              Selamat datang,{' '}
+              <span className="font-semibold text-gray-800">
+                {userName}
+                {/* {userData?.gelar ? `, ${userData.gelar}` : ''} */}
+              </span>
+            </p>
+          </div>
+
+          {/* Bagian Kanan: Tombol Logout */}
+          <button
+            onClick={onLogout}
+            className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-lg transition text-sm shadow-sm hover:shadow-md flex-shrink-0 self-start sm:self-center"
           >
             Logout
           </button>
@@ -61,15 +125,17 @@ export default function MahasiswaDashboard({
             </div>
             <div>
               <p className="text-gray-600 text-sm">Status Kehadiran</p>
-              <p className={`text-xl font-bold mt-1 flex items-center gap-2 ${
-                currentMahasiswa  ?.status === 'Aktif' ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {currentMahasiswa ?.status || '-'}
+              <p className="text-xl font-bold mt-1 flex items-center gap-2">
+                <p className="text-xl font-bold text-green-600 mt-1">Aktif</p>
               </p>
             </div>
             <div>
               <p className="text-gray-600 text-sm">Persentase Hadir</p>
-              <p className="text-xl font-bold text-teal-600 mt-1">92%</p>
+              <p className="text-xl font-bold text-teal-600 mt-1">
+                {attendanceRate !== undefined && attendanceRate !== null 
+                  ? `${attendanceRate.toFixed(1)}%` 
+                  : '0%'}
+              </p>
             </div>
           </div>
         </div>
@@ -115,7 +181,7 @@ export default function MahasiswaDashboard({
               </div>
             </div>
           </button>
-          <button
+          {/* <button
             onClick={() => onNavigate('krs')}
             className="bg-white border-2 border-indigo-200 rounded-lg p-8 hover:shadow-lg transition transform hover:scale-105 text-left"
           >
@@ -130,7 +196,7 @@ export default function MahasiswaDashboard({
                 <p className="text-gray-600 text-sm mt-1">Lihat mata kuliah semester ini</p>
               </div>
             </div>
-          </button>
+          </button> */}
           {/* Scan Wajah untuk Absensi */}
           <button
             onClick={() => onNavigate('face-recognition')}
@@ -150,7 +216,7 @@ export default function MahasiswaDashboard({
           </button>
 
           {/* Absen Manual (hanya jika diaktifkan dosen) */}
-          <button
+          {/* <button
             onClick={manualAbsenEnabled ? () => onNavigate('manual-attendance') : undefined}
             className={`border-2 rounded-lg p-8 text-left ${
               manualAbsenEnabled 
@@ -180,8 +246,8 @@ export default function MahasiswaDashboard({
                 )}
               </div>
             </div>
-          </button>
-        </div>
+          </button> */}
+        </div> 
 
         <div className="mt-12 bg-blue-50 border-l-4 border-blue-600 rounded-lg p-6">
           <p className="text-blue-900 font-semibold flex items-start gap-3">
@@ -192,6 +258,7 @@ export default function MahasiswaDashboard({
           </p>
         </div>
       </main>
+      <Footer role="mahasiswa" onNavigate={onNavigate}/>
     </div>
   )
 }

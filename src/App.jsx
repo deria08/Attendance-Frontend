@@ -16,6 +16,7 @@ import RegistrasiWajah from './pages/RegistrasiWajah';
 import KrsPage from './pages/KrsPage';
 import ManajemenEnrollment from './pages/ManajemenEnrollment';
 import ManualAttendancePage from './pages/ManualAttendancePage';
+import BantuanPage from './pages/BantuanPage';
 import { apiFetch } from './utils/api';
 import { EXPRESS_API_URL } from './config';
 
@@ -29,11 +30,12 @@ function App() {
   const [userData, setUserData] = useState(null)
   const [selectedCourse, setSelectedCourse] = useState(null);
   // Di App.jsx, tambahkan state
-  
+  const totalMahasiswa = users.filter(u => u.role === 'mahasiswa').length;
+  const totalDosen = users.filter(u => u.role === 'dosen').length;
   const [faceStatus, setFaceStatus] = useState({}); // key: nim_nidn, value: boolean
 
   // Di handleLogin atau handleAdminLogin
-  // localStorage.setItem('token', data.token);
+  // sessionStorage.setItem('token', data.token);
 // Fungsi fetch face status
 const fetchFaceStatus = async () => {
   try {
@@ -56,7 +58,7 @@ useEffect(() => {
 
 const fetchProfile = async () => {
   try {
-    const res = await apiFetch(`${Expr}/profile`);
+    const res = await apiFetch(`${EXPRESS_API_URL}/profile`);
     if (res.ok) {
       const user = await res.json();
       setUserData(user);
@@ -69,12 +71,10 @@ const fetchProfile = async () => {
 };
 
 // Fungsi reset wajah (panggil dari admin)
-const handleResetFace = async (nim, name) => {
+const handleResetFace = async (userId, name) => {
   try {
-    await apiFetch(`${Expr}/users/faces/${encodeURIComponent(nim)}`, { method: 'DELETE' });
-    // Refresh status
+    await apiFetch(`${EXPRESS_API_URL}/users/faces/${userId}`, { method: 'DELETE' });
     await fetchFaceStatus();
-    // Optional: jika perlu refresh daftar users (tidak perlu karena nama tetap)
     alert('Data wajah berhasil direset');
   } catch (err) {
     alert('Gagal reset: ' + err.message);
@@ -83,11 +83,11 @@ const handleResetFace = async (nim, name) => {
   const fetchUsers = async () => {
   try {
     // Ambil data user dari backend Express (seperti biasa)
-    const resUsers = await apiFetch(`${Expr}/auth/users`);
+    const resUsers = await apiFetch(`${EXPRESS_API_URL}/auth/users`);
     const usersData = await resUsers.json();
     
     // Ambil status face_registered dari endpoint baru (misal /api/faces/status)
-    const resFaceStatus = await apiFetch(`${Expr}/users/mahasiswa/face-status`);
+    const resFaceStatus = await apiFetch(`${EXPRESS_API_URL}/users/mahasiswa/face-status`);
     const faceStatus = await resFaceStatus.json(); // array: [{ name, nim, face_registered }]
     
     // Gabungkan: tambahkan face_registered ke setiap user yang role mahasiswa
@@ -130,22 +130,26 @@ const dosenList = users
     nama: u.name,
     nidn: u.nim_nidn, // ← ini juga
     email: u.email || '-',
-    status: 'Aktif'
+    status: 'Aktif',
+    gelar: u.gelar || ''
   }))
   // registrasi mahasiswa
-const handleNavigate = (page, data = {}) => {
+const handleNavigate = (page, data = null) => {
   setCurrentPage(page);
-  if (data.userName) setUserName(data.userName);
-  if (data.userId) setUserId(data.userId);
-  if (data.role) setUserRole(data.role);   // ← tambahkan
+  if (data) {
+    if (data.userName) setUserName(data.userName);
+    if (data.userId) setUserId(data.userId);
+    if (data.role) setUserRole(data.role);
   if (data.courseId) setSelectedCourse(data); // simpan data course
-  setUserData(data);
+
+  // setUserData(data);
+  }
 };
 
   // Di App.jsx, tambahkan dalam fungsi handleLogin yang sudah ada atau buat khusus
 const handleAdminLogin = async (username, password, expectedRole) => {
   try {
-    const res = await fetch(`${Expr}/auth/login`, {
+    const res = await fetch(`${EXPRESS_API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: username, nim_nidn: password })
@@ -154,10 +158,10 @@ const handleAdminLogin = async (username, password, expectedRole) => {
     if (!res.ok) throw new Error(data.message);
     const user = data.user;  // ← pastikan baris ini ada
     if (user.role !== 'admin') throw new Error('Bukan akun admin');
-    localStorage.setItem('token', data.token);
+    sessionStorage.setItem('token', data.token);
     setUserRole('admin');
     setUserName(user.name);
-    setUserId(user._id);
+    setUserId(user.id || user._id);
     setUserData(user);
     setCurrentPage('admin-dashboard');
     fetchUsers();
@@ -168,7 +172,7 @@ const handleAdminLogin = async (username, password, expectedRole) => {
 
   const handleLogin = async (name, nim_nidn, expectedRole) => {
   try {
-    const res = await fetch(`${Expr}/auth/login`, {
+    const res = await fetch(`${EXPRESS_API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, nim_nidn })
@@ -183,10 +187,10 @@ const handleAdminLogin = async (username, password, expectedRole) => {
     // const identifier = data.user._id || data.user.nim_nidn;
     const userId = user.id || user._id;   // coba salah satu
     console.log('Login berhasil, userId =', userId, 'role =', user.role);
-    localStorage.setItem('token', data.token);
+    sessionStorage.setItem('token', data.token);
     setUserRole(user.role);
     setUserName(user.name);
-    setUserId(userId);  // simpan ObjectId user
+    setUserId(user.id || user._id);  // simpan ObjectId user
     setUserData(user);
     await fetchProfile();
     if (user.role === 'mahasiswa') setCurrentPage('mahasiswa-dashboard');
@@ -200,10 +204,11 @@ const handleAdminLogin = async (username, password, expectedRole) => {
     setCurrentPage('landing')
     setUserRole(null)
     setUserName('')
+    sessionStorage.removeItem('token');
   }
 
   const handleAddMahasiswa = async (data) => {
-    await apiFetch(`${Expr}/auth/register`, {
+    await apiFetch(`${EXPRESS_API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -219,21 +224,22 @@ const handleAdminLogin = async (username, password, expectedRole) => {
   };
 
   const handleAddDosen = async (data) => {
-  await apiFetch(`${Expr}/auth/register`, {
+  await apiFetch(`${EXPRESS_API_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: data.nama,
       nim_nidn: data.nidn, // ← kirim NIDN
       email: data.email,
-      role: 'dosen'
+      role: 'dosen',
+      gelar: data.gelar || ''
     })
   })
   fetchUsers()
 }
 
   const handleEditMahasiswa = async (id, data) => {
-  await apiFetch(`${Expr}/auth/users/${id}`, {
+  await apiFetch(`${EXPRESS_API_URL}/auth/users/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -249,34 +255,35 @@ const handleAdminLogin = async (username, password, expectedRole) => {
 }
 
   const handleEditDosen = async (id, data) => {
-    await apiFetch(`${Expr}/auth/users/${id}`, {
+    await apiFetch(`${EXPRESS_API_URL}/auth/users/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: data.nama,
         nim_nidn: data.nidn,
         email: data.email,
-        role: 'dosen'
+        role: 'dosen',
+        gelar: data.gelar || ''
       })
     })
     fetchUsers()
   }
 
   const handleDeleteMahasiswa = async (id) => {
-  await apiFetch(`${Expr}/auth/users/${id}`, {
+  await apiFetch(`${EXPRESS_API_URL}/auth/users/${id}`, {
     method: 'DELETE'
   })
   fetchUsers()
 }
 
 const handleDeleteDosen = async (id) => {
-  await apiFetch(`${Expr}/auth/users/${id}`, {
+  await apiFetch(`${EXPRESS_API_URL}/auth/users/${id}`, {
     method: 'DELETE'
   })
   fetchUsers()
 }
   const handleAddMataKuliah = async (data) => {
-  await apiFetch(`${Expr}/courses`, {
+  await apiFetch(`${EXPRESS_API_URL}/courses`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -285,7 +292,7 @@ const handleDeleteDosen = async (id) => {
 };
 
   const handleEditMataKuliah = async (id, data) => {
-    await apiFetch(`${Expr}/courses/${id}`, {
+    await apiFetch(`${EXPRESS_API_URL}/courses/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -293,12 +300,12 @@ const handleDeleteDosen = async (id) => {
   };
 
   const handleDeleteMataKuliah = async (id) => {
-    await apiFetch(`${Expr}/courses/${id}`, { method: 'DELETE' });
+    await apiFetch(`${EXPRESS_API_URL}/courses/${id}`, { method: 'DELETE' });
   };
   console.log('App - currentPage:', currentPage, 'userId:', userId);
-  // const currentMahasiswa = mahasiswaList?.find(m => m.nim === userId);
+  const currentMahasiswa = mahasiswaList?.find(m => m.nim === userId);
   return (
-    <div className="bg-white min-h-screen">
+    <div>
       {currentPage === 'landing' && (
         <LandingPage onNavigate={handleNavigate} />
       )}
@@ -312,7 +319,13 @@ const handleDeleteDosen = async (id) => {
         <DosenLoginPage onNavigate={handleNavigate} onLogin={handleLogin} />
       )}
       {currentPage === 'admin-dashboard' && (
-        <AdminDashboard onNavigate={handleNavigate} userName={userName} onLogout={handleLogout} />
+        <AdminDashboard 
+          onNavigate={handleNavigate} 
+          userName={userName} 
+          onLogout={handleLogout}
+          totalMahasiswa={totalMahasiswa}
+          totalDosen={totalDosen} 
+        />
       )}
       {currentPage === 'manajemen-pengguna' && (
         <ManajemenPengguna
@@ -347,16 +360,23 @@ const handleDeleteDosen = async (id) => {
           manualAbsenEnabled={manualAbsenEnabled}
           onLogout={handleLogout}
           userData={userData}
+          faceStatus={faceStatus}
         />
       )}
       {currentPage === 'face-recognition' && (
-        <FaceRecognitionPage onNavigate={handleNavigate} userName={userName} />
+        <FaceRecognitionPage 
+          onNavigate={handleNavigate} 
+          userName={userName}
+          userId={userId}
+          userData={userData} 
+        />
       )}
       {currentPage === 'dosen-dashboard' && (
         <DosenDashboard 
           onNavigate={handleNavigate} 
           userName={userName} 
           userId={userId}
+          userData={userData}
           onLogout={handleLogout}
           onEnableManualAbsen={() => setManualAbsenEnabled(!manualAbsenEnabled)}
           manualAbsenEnabled={manualAbsenEnabled}
@@ -391,23 +411,29 @@ const handleDeleteDosen = async (id) => {
           // Optional: panggil API untuk simpan ke database
           await fetchProfile();
           await fetchFaceStatus();
+          onNavigate('mahasiswa-dashboard');
         }}
       />
     )}
-      {currentPage === 'krs' && (
+      {/* {currentPage === 'krs' && (
       <KrsPage
         onNavigate={handleNavigate}
         userId={userId}
         userName={userName}
         mahasiswa={userData} // Anda perlu menyediakan objek mahasiswa lengkap (prodi, semester)
-      />
-    )}
+      /> */}
+    {/* )} */}
     {currentPage === 'manajemen-enrollment' && (
-      <ManajemenEnrollment onNavigate={handleNavigate} />
+      <ManajemenEnrollment 
+      onNavigate={handleNavigate}
+      userData={userData} />
     )}
-    {currentPage === 'manual-attendance' && (
+    {currentPage === 'bantuan' && (
+      <BantuanPage onNavigate={handleNavigate} role={userRole} />
+    )}
+    {/* {currentPage === 'manual-attendance' && (
       <ManualAttendancePage onNavigate={handleNavigate} userName={userName} />
-)}
+)} */}
     </div>
   )
 }
