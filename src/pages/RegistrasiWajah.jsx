@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Footer from '../components/Footer';
+import logoSTTP from '../assets/logostt.png';
 
 export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, onRegisterFace, userId, nim }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -199,19 +200,55 @@ export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, o
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-6">
-          <button
-            onClick={() => onNavigate('mahasiswa-dashboard')}
-            className="text-gray-600 hover:text-gray-900 font-semibold flex items-center gap-2 mb-3"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Kembali
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900">Registrasi Wajah</h1>
-          <p className="text-gray-600 mt-1">Daftarkan wajah Anda untuk sistem pengenalan wajah</p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <div className="grid grid-cols-[auto,1fr,auto] items-center gap-4">
+            {/* Kiri: Brand */}
+            <div className="flex items-center gap-3">
+              <img
+                src={logoSTTP}
+                alt="Logo STT Pati"
+                className="w-14 h-14 md:w-16 md:h-16 object-contain flex-shrink-0"
+              />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl sm:text-[48px] font-bold text-blue-700 tracking-tight">
+                    SIPATI
+                  </h1>
+                  <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                    Mahasiswa
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-gray-500 font-medium">
+                  Sistem Informasi Presensi STT Pati
+                </p>
+              </div>
+            </div>
+
+            {/* Tengah: Judul Halaman */}
+            <div className="text-center">
+              <h2 className="text-lg md:text-xl font-bold text-gray-800">
+                Registrasi Wajah
+              </h2>
+              <p className="text-xs sm:text-sm text-gray-500">
+                Daftarkan wajah Anda untuk sistem pengenalan wajah
+              </p>
+            </div>
+
+            {/* Kanan: Tombol Kembali */}
+            <div className="flex justify-end">
+              <button
+                onClick={() => onNavigate('mahasiswa-dashboard')}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Kembali
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 

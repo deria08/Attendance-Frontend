@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import Modal from '../components/Modal'
 import { apiFetch } from '../utils/api'
-import { EXPRESS_API_URL } from '../config' // gunakan config
+import { EXPRESS_API_URL } from '../config'
 import Footer from '../components/Footer'
 import logoSTTP from '../assets/logostt.png'
 
@@ -22,22 +22,28 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
     ruangan: '',
     late_tolerance_minutes: 15,
     sks: 2,
-    tahun_ajaran: '',    // ⭐ tambahan
-    jenis_semester: ''   // ⭐ tambahan
+    tahun_ajaran: '',
+    jenis_semester: ''
   })
+  const [isAutoEndTime, setIsAutoEndTime] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // ⭐ State untuk filter
+  // State filter
   const [filterTahun, setFilterTahun] = useState('')
   const [filterSemester, setFilterSemester] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
   const [filterDosen, setFilterDosen] = useState('')
+  const [filterProdi, setFilterProdi] = useState('')
+  const [filterSemesterTingkat, setFilterSemesterTingkat] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // State Sort
+  const [sortBy, setSortBy] = useState('kode_mk')
+  const [sortOrder, setSortOrder] = useState('asc')
 
   const API_URL = `${EXPRESS_API_URL}/courses`
 
-  // Fetch courses
   const fetchCourses = async () => {
     try {
       const res = await apiFetch(API_URL)
@@ -54,7 +60,29 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
     fetchCourses()
   }, [])
 
-  // ⭐ Dapatkan daftar tahun ajaran unik dari data courses
+  const addMinutesToTime = (timeStr, minutesToAdd) => {
+    if (!timeStr) return ''
+    const [hours, minutes] = timeStr.split(':').map(Number)
+    const totalMinutes = hours * 60 + minutes + minutesToAdd
+    const newHours = Math.floor(totalMinutes / 60)
+    const newMinutes = totalMinutes % 60
+    return `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}`
+  }
+
+  useEffect(() => {
+    if (isAutoEndTime) {
+      const sks = parseInt(formData.sks) || 0
+      const jamMulai = formData.jam_mulai
+      if (sks > 0 && jamMulai) {
+        const duration = sks * 50
+        const newJamSelesai = addMinutesToTime(jamMulai, duration)
+        if (newJamSelesai !== formData.jam_selesai) {
+          setFormData(prev => ({ ...prev, jam_selesai: newJamSelesai }))
+        }
+      }
+    }
+  }, [formData.sks, formData.jam_mulai, formData.jam_selesai, isAutoEndTime])
+
   const tahunOptions = useMemo(() => {
     const tahunSet = new Set()
     courses.forEach(c => {
@@ -63,19 +91,38 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
     return ['', ...Array.from(tahunSet).sort()]
   }, [courses])
 
-  // ⭐ Filter courses berdasarkan filter dan pencarian
+  const prodiOptions = useMemo(() => {
+    const prodiSet = new Set()
+    courses.forEach(c => {
+      if (c.prodi) prodiSet.add(c.prodi)
+    })
+    return Array.from(prodiSet).sort()
+  }, [courses])
+
+  const semesterTingkatOptions = useMemo(() => {
+    const semSet = new Set()
+    courses.forEach(c => {
+      if (c.semester) semSet.add(String(c.semester))
+    })
+    return Array.from(semSet).sort((a, b) => Number(a) - Number(b))
+  }, [courses])
+
+  const getDosenName = (dosenId) => {
+    if (!dosenId) return 'Tidak ada dosen'
+    const dosen = dosenList?.find(d => d.id === dosenId || d._id === dosenId)
+    return dosen ? dosen.nama : (typeof dosenId === 'object' ? dosenId.name : 'Dosen tidak ditemukan')
+  }
+
   const filteredCourses = useMemo(() => {
-    return courses.filter(course => {
-      // Filter tahun ajaran
+    let result = courses.filter(course => {
       if (filterTahun && course.tahun_ajaran !== filterTahun) return false
-      // Filter semester (jenis_semester)
       if (filterSemester && course.jenis_semester !== filterSemester) return false
-      // Filter dosen
+      if (filterProdi && course.prodi !== filterProdi) return false
+      if (filterSemesterTingkat && String(course.semester) !== filterSemesterTingkat) return false
       if (filterDosen) {
-      const dosenId = course.dosen_pengampu?._id || course.dosen_pengampu
-      if (dosenId !== filterDosen) return false
-    }
-      // Pencarian (kode_mk atau nama_mk)
+        const dosenId = course.dosen_pengampu?._id || course.dosen_pengampu
+        if (String(dosenId) !== String(filterDosen)) return false
+      }
       if (searchQuery) {
         const q = searchQuery.toLowerCase()
         const matchKode = course.kode_mk?.toLowerCase().includes(q)
@@ -84,9 +131,39 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
       }
       return true
     })
-  }, [courses, filterTahun, filterSemester, filterDosen, searchQuery])
 
-  // ====== Handle Modal ======
+    const fieldMap = {
+      kode_mk: 'kode_mk',
+      nama_mk: 'nama_mk',
+      sks: 'sks',
+      prodi: 'prodi',
+      semester: 'semester',
+      dosen_pengampu: 'dosen_pengampu',
+      hari: 'hari',
+      ruangan: 'ruangan',
+      late_tolerance_minutes: 'late_tolerance_minutes'
+    }
+    const field = fieldMap[sortBy] || 'kode_mk'
+
+    result.sort((a, b) => {
+      let valA, valB
+      if (field === 'dosen_pengampu') {
+        valA = getDosenName(a.dosen_pengampu) || ''
+        valB = getDosenName(b.dosen_pengampu) || ''
+      } else {
+        valA = a[field] ?? ''
+        valB = b[field] ?? ''
+      }
+      if (typeof valA === 'string') valA = valA.toLowerCase()
+      if (typeof valB === 'string') valB = valB.toLowerCase()
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1
+      return 0
+    })
+
+    return result
+  }, [courses, filterTahun, filterSemester, filterProdi, filterSemesterTingkat, filterDosen, searchQuery, sortBy, sortOrder])
+
   const handleOpenModal = () => {
     setIsEditMode(false)
     setFormData({
@@ -104,6 +181,7 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
       tahun_ajaran: '',
       jenis_semester: ''
     })
+    setIsAutoEndTime(true)
     setIsModalOpen(true)
   }
 
@@ -125,18 +203,31 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
       tahun_ajaran: course.tahun_ajaran || '',
       jenis_semester: course.jenis_semester || ''
     })
+
+    const sks = parseInt(course.sks) || 0
+    const jamMulai = course.jam_mulai
+    const jamSelesai = course.jam_selesai
+    let isAuto = true
+    if (sks > 0 && jamMulai) {
+      const duration = sks * 50
+      const calculatedEnd = addMinutesToTime(jamMulai, duration)
+      if (calculatedEnd !== jamSelesai) {
+        isAuto = false
+      }
+    } else {
+      isAuto = false
+    }
+    setIsAutoEndTime(isAuto)
     setIsModalOpen(true)
   }
 
-  // ====== Submit ======
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
 
-    // Validasi
-    if (!formData.kode_mk || !formData.nama_mk || !formData.prodi || !formData.semester || 
-        !formData.dosen_pengampu || !formData.hari || !formData.jam_mulai || 
+    if (!formData.kode_mk || !formData.nama_mk || !formData.prodi || !formData.semester ||
+        !formData.dosen_pengampu || !formData.hari || !formData.jam_mulai ||
         !formData.jam_selesai || !formData.ruangan || !formData.tahun_ajaran || !formData.jenis_semester) {
       setError('Semua field wajib diisi (termasuk Tahun Ajaran dan Semester)')
       setLoading(false)
@@ -177,7 +268,6 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
     }
   }
 
-  // ====== Delete ======
   const handleDeleteConfirm = async (id) => {
     try {
       const res = await apiFetch(`${API_URL}/${id}`, { method: 'DELETE' })
@@ -190,68 +280,72 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
     }
   }
 
-  const getDosenName = (dosenId) => {
-    if (!dosenId) return 'Tidak ada dosen'
-    const dosen = dosenList?.find(d => d.id === dosenId || d._id === dosenId)
-    return dosen ? dosen.nama : (typeof dosenId === 'object' ? dosenId.name : 'Dosen tidak ditemukan')
+  const hariOptions = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']
+  const prodiStaticOptions = ['Informatika', 'Elektro']
+  const periodeOptions = ['ganjil', 'genap']
+
+  const toggleSortOrder = () => {
+    setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
   }
 
-  const hariOptions = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']
-  const prodiOptions = ['Informatika', 'Elektro']
-  const semesterOptions = ['ganjil', 'genap']
+  const resetFilters = () => {
+    setFilterTahun('')
+    setFilterSemester('')
+    setFilterProdi('')
+    setFilterSemesterTingkat('')
+    setFilterDosen('')
+    setSearchQuery('')
+    setSortBy('kode_mk')
+    setSortOrder('asc')
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          {/* Grid 3 kolom agar judul benar-benar di tengah */}
-          <div className="grid grid-cols-[auto,1fr,auto] items-center gap-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-4">
+          {/* Flex dengan shrink 0 pada kiri dan kanan agar tidak terpotong */}
+          <div className="flex items-center justify-between gap-2 sm:gap-4">
             
-            {/* Kiri: Brand */}
-            <div className="flex items-center gap-3">
-              <img 
-                src={logoSTTP} 
-                alt="Logo STT Pati" 
-                className="w-14 h-14 md:w-16 md:h-16 object-contain flex-shrink-0" 
+            {/* Kiri: Brand (logo + SIPATI + badge) - flex-shrink-0 agar tidak terpotong */}
+            <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+              <img
+                src={logoSTTP}
+                alt="Logo STT Pati"
+                className="w-8 h-8 sm:w-12 sm:h-12 md:w-16 md:h-16 object-contain"
               />
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl md:text-[36px] font-extrabold text-blue-700 tracking-tight">
-                    SIPATI
-                  </h1>
-                  <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                    Admin
-                  </span>
-                </div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">
-                  Sistem Informasi Presensi STT Pati
-                </p>
+              <div className="flex items-center gap-1 sm:gap-2">
+                <h1 className="text-base sm:text-2xl md:text-[36px] font-bold text-blue-700 tracking-tight whitespace-nowrap">
+                  SIPATI
+                </h1>
+                <span className="bg-blue-100 text-blue-700 text-[8px] sm:text-[10px] font-semibold px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap">
+                  Admin
+                </span>
               </div>
             </div>
-      
-            {/* Tengah: Judul Halaman + Deskripsi */}
-            <div className="text-center">
-              <h2 className="text-lg md:text-xl font-bold text-gray-800">
-                Kelola Akun
+
+            {/* Tengah: Judul Halaman + Deskripsi - flex-1 agar mengambil ruang, min-w-0 agar bisa truncate */}
+            <div className="flex-1 text-center min-w-0 px-1 sm:px-2">
+              <h2 className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate">
+                Kelola Mata Kuliah
               </h2>
-              <p className="text-xs sm:text-sm text-gray-500">
-                Kelola Akun untuk Dosen, dan Mahasiswa
+              <p className="text-[10px] sm:text-xs md:text-sm text-gray-500 truncate hidden sm:block">
+                Kelola data mata kuliah, dosen pengampu, dan jadwal perkuliahan
               </p>
             </div>
-      
-            {/* Kanan: Tombol Kembali */}
-            <div className="flex justify-end">
+
+            {/* Kanan: Tombol Kembali - flex-shrink-0 agar tidak terpotong */}
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
               <button
                 onClick={() => onNavigate('admin-dashboard')}
-                className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1 transition"
+                className="text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium flex items-center gap-0.5 sm:gap-1 transition whitespace-nowrap"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
-                Kembali
+                <span className="hidden sm:inline">Kembali</span>
               </button>
             </div>
-      
+
           </div>
         </div>
       </header>
@@ -263,82 +357,141 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
           </div>
         )}
 
-        {/* ⭐ FILTER & SEARCH */}
+        {/* FILTER & SEARCH & SORT */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+          {/* Baris 1: Filter */}
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-          {/* Tahun Ajaran */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tahun Ajaran</label>
-            <select
-              value={filterTahun}
-              onChange={(e) => setFilterTahun(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Semua</option>
-              {tahunOptions.filter(t => t !== '').map(tahun => (
-                <option key={tahun} value={tahun}>{tahun}</option>
-              ))}
-            </select>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tahun Ajaran</label>
+              <select
+                value={filterTahun}
+                onChange={(e) => setFilterTahun(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Semua</option>
+                {tahunOptions.filter(t => t !== '').map(tahun => (
+                  <option key={tahun} value={tahun}>{tahun}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Periode Semester</label>
+              <select
+                value={filterSemester}
+                onChange={(e) => setFilterSemester(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Semua</option>
+                <option value="ganjil">Ganjil</option>
+                <option value="genap">Genap</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Prodi</label>
+              <select
+                value={filterProdi}
+                onChange={(e) => setFilterProdi(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Semua</option>
+                {prodiOptions.map(prodi => (
+                  <option key={prodi} value={prodi}>{prodi}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Semester (Tingkat)</label>
+              <select
+                value={filterSemesterTingkat}
+                onChange={(e) => setFilterSemesterTingkat(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Semua</option>
+                {semesterTingkatOptions.map(sem => (
+                  <option key={sem} value={sem}>{sem ? `Semester ${sem}` : ''}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Dosen</label>
+              <select
+                value={filterDosen}
+                onChange={(e) => setFilterDosen(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Semua Dosen</option>
+                {dosenList.map(dosen => (
+                  <option key={dosen.id} value={dosen.id}>
+                    {dosen.nama} ({dosen.nidn})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Semester */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Periode Semester</label>
-            <select
-              value={filterSemester}
-              onChange={(e) => setFilterSemester(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Semua</option>
-              <option value="ganjil">Ganjil</option>
-              <option value="genap">Genap</option>
-            </select>
-          </div>
+          {/* Baris 2: Cari + Sort */}
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cari</label>
+              <input
+                type="text"
+                placeholder="Kode atau nama MK..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
 
-          {/* ⭐ Dosen Pengampu */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Dosen</label>
-            <select
-              value={filterDosen}
-              onChange={(e) => setFilterDosen(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Semua Dosen</option>
-              {dosenList.map(dosen => (
-                <option key={dosen.id} value={dosen.id}>
-                  {dosen.nama} ({dosen.nidn})
-                </option>
-              ))}
-            </select>
-          </div>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Urutkan</label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="kode_mk">Kode MK</option>
+                  <option value="nama_mk">Nama MK</option>
+                  <option value="sks">SKS</option>
+                  <option value="prodi">Prodi</option>
+                  <option value="semester">Semester</option>
+                  <option value="dosen_pengampu">Dosen</option>
+                  <option value="hari">Hari</option>
+                  <option value="ruangan">Ruangan</option>
+                  <option value="late_tolerance_minutes">Toleransi</option>
+                </select>
+              </div>
+              <div className="flex-shrink-0">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Urutan</label>
+                <button
+                  onClick={toggleSortOrder}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition flex items-center justify-center text-lg font-bold"
+                  title={sortOrder === 'asc' ? 'Ascending (A → Z)' : 'Descending (Z → A)'}
+                >
+                  {sortOrder === 'asc' ? '↑' : '↓'}
+                </button>
+              </div>
+            </div>
 
-          {/* Cari */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cari</label>
-            <input
-              type="text"
-              placeholder="Kode atau nama MK..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+            <div>
+              <button
+                onClick={resetFilters}
+                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-lg transition"
+              >
+                Reset Filter
+              </button>
+            </div>
 
-          {/* Reset Filter */}
-          <div>
-            <button
-              onClick={() => {
-                setFilterTahun('')
-                setFilterSemester('')
-                setFilterDosen('')   // ⭐ reset filter dosen
-                setSearchQuery('')
-              }}
-              className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-lg transition"
-            >
-              Reset Filter
-            </button>
+            <div className="flex justify-end items-end">
+              <span className="text-sm text-gray-500">
+                Menampilkan {filteredCourses.length} mata kuliah
+              </span>
+            </div>
           </div>
-        </div>
         </div>
 
         <button
@@ -360,9 +513,7 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
                   <th className="px-6 py-4 text-left text-sm font-semibold">Nama MK</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold">SKS</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold">Prodi</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Semester (Tingkat)</th>
-                  {/* <th className="px-6 py-4 text-left text-sm font-semibold">Tahun Ajaran</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">Periode</th> */}
+                  <th className="px-6 py-4 text-left text-sm font-semibold">Semester</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold">Dosen</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold">Jadwal</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold">Ruangan</th>
@@ -373,7 +524,7 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
               <tbody className="divide-y divide-gray-200">
                 {filteredCourses.length === 0 ? (
                   <tr>
-                    <td colSpan="12" className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan="10" className="px-6 py-8 text-center text-gray-500">
                       Tidak ada data mata kuliah yang sesuai filter.
                     </td>
                   </tr>
@@ -385,14 +536,6 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
                       <td className="px-6 py-4 text-sm">{course.sks}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{course.prodi}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">Semester {course.semester}</td>
-                      {/* <td className="px-6 py-4 text-sm text-gray-600">{course.tahun_ajaran || '-'}</td> */}
-                      {/* <td className="px-6 py-4 text-sm">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          course.jenis_semester === 'ganjil' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-                        }`}>
-                          {course.jenis_semester || '-'}
-                        </span>
-                      </td> */}
                       <td className="px-6 py-4 text-sm text-gray-600">{getDosenName(course.dosen_pengampu)}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{course.hari} {course.jam_mulai} - {course.jam_selesai}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{course.ruangan}</td>
@@ -419,7 +562,7 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
           </div>
         </div>
 
-        {/* Modal Tambah/Edit */}
+        {/* Modal Tambah/Edit - LENGKAP */}
         {isModalOpen && (
           <Modal
             isOpen={true}
@@ -475,7 +618,7 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                   >
                     <option value="">Pilih Prodi</option>
-                    {prodiOptions.map(prodi => <option key={prodi} value={prodi}>{prodi}</option>)}
+                    {prodiStaticOptions.map(prodi => <option key={prodi} value={prodi}>{prodi}</option>)}
                   </select>
                 </div>
               </div>
@@ -512,7 +655,6 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
                 </div>
               </div>
 
-              {/* ⭐ FIELD TAHUN AJARAN & SEMESTER (PERIODE) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Tahun Ajaran</label>
@@ -583,9 +725,37 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
                     type="time"
                     required
                     value={formData.jam_selesai}
-                    onChange={(e) => setFormData({ ...formData, jam_selesai: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, jam_selesai: e.target.value })
+                      setIsAutoEndTime(false)
+                    }}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    disabled={isAutoEndTime}
                   />
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="checkbox"
+                      id="autoEndTime"
+                      checked={isAutoEndTime}
+                      onChange={(e) => {
+                        const checked = e.target.checked
+                        setIsAutoEndTime(checked)
+                        if (checked) {
+                          const sks = parseInt(formData.sks) || 0
+                          const jamMulai = formData.jam_mulai
+                          if (sks > 0 && jamMulai) {
+                            const duration = sks * 50
+                            const newJamSelesai = addMinutesToTime(jamMulai, duration)
+                            setFormData(prev => ({ ...prev, jam_selesai: newJamSelesai }))
+                          }
+                        }
+                      }}
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    />
+                    <label htmlFor="autoEndTime" className="text-sm text-gray-700">
+                      Hitung otomatis berdasarkan SKS (1 SKS = 50 menit)
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -623,7 +793,6 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
           </Modal>
         )}
 
-        {/* Modal Konfirmasi Hapus */}
         {confirmDelete && (
           <Modal isOpen={true} title="Konfirmasi Hapus" onClose={() => setConfirmDelete(null)}>
             <p className="text-gray-700 mb-6">
@@ -646,7 +815,7 @@ export default function KelolaMataKuliah({ onNavigate, dosenList }) {
           </Modal>
         )}
       </main>
-      <Footer role="admin" onNavigate={onNavigate}/>  
+      <Footer role="admin" onNavigate={onNavigate} />
     </div>
   )
 }

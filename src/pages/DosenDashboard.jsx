@@ -5,13 +5,14 @@ import { apiFetch } from '../utils/api';
 import { EXPRESS_API_URL } from '../config';
 import Footer from '../components/Footer';
 import logoSTTP from '../assets/logostt.png';
+import Modal from '../components/Modal'; // untuk konfirmasi
 
 export default function DosenDashboard({ 
   onNavigate, 
   userName, 
   onLogout, 
-  onEnableManualAbsen, 
-  manualAbsenEnabled,
+  // onEnableManualAbsen, 
+  // manualAbsenEnabled,
   userId,
   userData 
 }) {
@@ -20,6 +21,18 @@ export default function DosenDashboard({
   const [activeMeeting, setActiveMeeting] = useState({});
   const [selectedPertemuan, setSelectedPertemuan] = useState({});
 
+
+   // State untuk dialog "Buka Kembali"
+  const [showReopenDialog, setShowReopenDialog] = useState(false);
+  const [showConfirmReopenDialog, setShowConfirmReopenDialog] = useState(false);
+  const [pendingCourse, setPendingCourse] = useState(null);
+  const [pendingPertemuan, setPendingPertemuan] = useState(null);
+
+  // State untuk dialog tutup absensi
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [pendingCloseMeetingId, setPendingCloseMeetingId] = useState(null);
+  const [pendingCloseCourseId, setPendingCloseCourseId] = useState(null);
+  const [pendingClosePertemuan, setPendingClosePertemuan] = useState(null);
   // ⭐ Fungsi untuk menentukan periode akademik aktif (sama seperti di backend)
   const getCurrentAcademicPeriod = () => {
     const now = new Date();
@@ -95,19 +108,52 @@ export default function DosenDashboard({
     } catch (err) { console.error(err); }
   };
 
-  const openMeeting = async (courseId, pertemuanKe) => {
+  // ===== FUNGSI BUKA ABSENSI (DENGAN KONFIRMASI) =====
+  const handleOpenMeeting = async (courseId, pertemuanKe) => {
     if (!pertemuanKe || pertemuanKe < 1 || pertemuanKe > 16) {
       alert('Masukkan nomor pertemuan (1-16)');
       return;
     }
+
+    try {
+      // 1. Cek apakah pertemuan sudah memiliki data absensi
+      const checkRes = await apiFetch(
+        `${EXPRESS_API_URL}/meetings/check-attendance?course_id=${courseId}&pertemuan=${pertemuanKe}`
+      );
+      const checkData = await checkRes.json();
+      if (!checkRes.ok) throw new Error(checkData.message || 'Gagal mengecek absensi');
+
+      // 2. Jika belum ada data, langsung buka
+      if (!checkData.hasAttendance) {
+        await openMeeting(courseId, pertemuanKe, false);
+        return;
+      }
+
+      // 3. Jika sudah ada data, tampilkan dialog pertama
+      setPendingCourse(courseId);
+      setPendingPertemuan(pertemuanKe);
+      setShowReopenDialog(true);
+
+    } catch (err) {
+      console.error(err);
+      alert('Gagal memproses permintaan');
+    }
+  };
+
+  // ===== FUNGSI BUKA MEETING (panggil API) =====
+  const openMeeting = async (courseId, pertemuanKe, force) => {
     try {
       const res = await apiFetch(`${EXPRESS_API_URL}/meetings/open`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ course_id: courseId, pertemuan_ke: parseInt(pertemuanKe) })
+        body: JSON.stringify({
+          course_id: courseId,
+          pertemuan_ke: parseInt(pertemuanKe),
+          force
+        })
       });
       if (res.ok) {
-        alert('Sesi absensi dibuka');
+        alert(force ? 'Sesi absensi dibuka kembali' : 'Sesi absensi dibuka');
         await fetchCourses();
       } else {
         const err = await res.json();
@@ -119,17 +165,52 @@ export default function DosenDashboard({
     }
   };
 
-  const closeMeeting = async (meetingId, courseId) => {
-    console.log('Token saat tutup:', sessionStorage.getItem('token'));
+  // ===== HANDLER KONFIRMASI =====
+  const handleReopenConfirm = () => {
+    setShowReopenDialog(false);
+    setShowConfirmReopenDialog(true);
+  };
+
+  const handleFinalConfirm = async () => {
+    setShowConfirmReopenDialog(false);
+    if (pendingCourse && pendingPertemuan) {
+      await openMeeting(pendingCourse, pendingPertemuan, true);
+      setPendingCourse(null);
+      setPendingPertemuan(null);
+    }
+  };
+
+  const handleCancel = () => {
+    setShowReopenDialog(false);
+    setShowConfirmReopenDialog(false);
+    setPendingCourse(null);
+    setPendingPertemuan(null);
+  };
+
+  // ===== HANDLE TUTUP ABSENSI (dengan konfirmasi) =====
+  const handleCloseMeeting = (meetingId, courseId, pertemuan) => {
+    setPendingCloseMeetingId(meetingId);
+    setPendingCloseCourseId(courseId);
+    setPendingClosePertemuan(pertemuan);
+    setShowCloseConfirm(true);
+  };
+
+  const confirmCloseMeeting = async () => {
+    setShowCloseConfirm(false);
     try {
-      const res = await apiFetch(`${EXPRESS_API_URL}/meetings/close/${meetingId}`, { method: 'PUT' });
+      const res = await apiFetch(`${EXPRESS_API_URL}/meetings/close/${pendingCloseMeetingId}`, {
+        method: 'PUT'
+      });
       if (res.ok) {
-        alert('Sesi ditutup');
+        const data = await res.json();
+        alert(data.message || 'Sesi ditutup dan absensi otomatis diisi');
+        // Refresh daftar course dan status meeting
         setActiveMeeting(prev => {
           const newState = { ...prev };
-          delete newState[courseId];
+          delete newState[pendingCloseCourseId];
           return newState;
         });
+        await fetchCourses(); // refresh data
       } else {
         const err = await res.json();
         alert(err.message || 'Gagal menutup sesi');
@@ -137,9 +218,21 @@ export default function DosenDashboard({
     } catch (err) {
       console.error(err);
       alert('Gagal menutup sesi');
+    } finally {
+      setPendingCloseMeetingId(null);
+      setPendingCloseCourseId(null);
+      setPendingClosePertemuan(null);
     }
   };
 
+  const cancelClose = () => {
+    setShowCloseConfirm(false);
+    setPendingCloseMeetingId(null);
+    setPendingCloseCourseId(null);
+    setPendingClosePertemuan(null);
+  };
+
+  
   return (
     <div className="min-h-screen">
       <header className="bg-white shadow-sm border-b border-gray-200">
@@ -215,17 +308,21 @@ export default function DosenDashboard({
                 
                 <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
                   {activeMeeting[course._id] ? (
-                    <div className="flex items-center justify-between">
-                      <span className="text-green-600 font-semibold">
-                        Sesi aktif: Pertemuan {activeMeeting[course._id].pertemuan_ke}
-                      </span>
-                      <button
-                        onClick={() => closeMeeting(activeMeeting[course._id]._id, course._id)}
-                        className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm"
-                      >
-                        Tutup Sesi
-                      </button>
-                    </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-green-600 font-semibold">
+                      Sesi aktif: Pertemuan {activeMeeting[course._id].pertemuan_ke}
+                    </span>
+                    <button
+                      onClick={() => handleCloseMeeting(
+                        activeMeeting[course._id]._id,
+                        course._id,
+                        activeMeeting[course._id].pertemuan_ke
+                      )}
+                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm"
+                    >
+                      Tutup Sesi
+                    </button>
+                  </div>
                   ) : (
                     <div className="flex gap-2 items-center">
                       <input
@@ -238,11 +335,11 @@ export default function DosenDashboard({
                         onChange={(e) => setSelectedPertemuan({...selectedPertemuan, [course._id]: e.target.value})}
                       />
                       <button
-                        onClick={() => openMeeting(course._id, selectedPertemuan[course._id])}
+                        onClick={() => handleOpenMeeting(course._id, selectedPertemuan[course._id])}
                         className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
                       >
                         Buka Absensi
-                      </button>
+</button>
                     </div>
                   )}
                 </div>
@@ -258,6 +355,96 @@ export default function DosenDashboard({
           </div>
         )}
       </main>
+      {/* ===== DIALOG KONFIRMASI 1 ===== */}
+      {showReopenDialog && (
+        <Modal isOpen={true} onClose={handleCancel}>
+          <div className="w-full max-w-md">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Pertemuan Sudah Memiliki Data Absensi
+            </h2>
+            <p className="text-gray-600 mb-6">
+              Sistem mendeteksi bahwa pertemuan ini sudah memiliki data kehadiran mahasiswa.
+              <br /><br />
+              Apakah Anda ingin membuka kembali pertemuan ini?
+              <br /><br />
+              Membuka kembali pertemuan akan mengizinkan mahasiswa melakukan absensi kembali pada pertemuan tersebut.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancel}
+                className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleReopenConfirm}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition"
+              >
+                Buka Kembali Pertemuan
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ===== DIALOG KONFIRMASI 2 ===== */}
+      {showConfirmReopenDialog && (
+        <Modal isOpen={true} onClose={handleCancel}>
+          <div className="w-full max-w-md">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Konfirmasi
+            </h2>
+            <p className="text-gray-600 mb-6">
+              Membuka kembali pertemuan dapat menyebabkan data absensi yang sudah ada diperbarui apabila mahasiswa melakukan absensi kembali.
+              <br /><br />
+              Apakah Anda yakin ingin melanjutkan?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancel}
+                className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition"
+              >
+                Tidak
+              </button>
+              <button
+                onClick={handleFinalConfirm}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition"
+              >
+                Ya, Buka Pertemuan
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* ===== DIALOG KONFIRMASI TUTUP ABSENSI ===== */}
+      {showCloseConfirm && (
+        <Modal isOpen={true} onClose={cancelClose}>
+          <div className="w-full max-w-md">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Tutup Absensi
+            </h2>
+            <p className="text-gray-600 mb-6">
+              Apakah Anda yakin ingin menutup absensi <strong>Pertemuan {pendingClosePertemuan}</strong>?
+              <br /><br />
+              Mahasiswa yang belum melakukan absensi akan otomatis diberi status <strong>Tidak Hadir</strong>.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={cancelClose}
+                className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition"
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirmCloseMeeting}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition"
+              >
+                Tutup Absensi
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       <Footer role="dosen" onNavigate={onNavigate}/>
     </div>
   );

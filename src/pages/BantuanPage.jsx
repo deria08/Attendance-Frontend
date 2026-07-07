@@ -1,5 +1,6 @@
 import React from 'react';
 import Footer from '../components/Footer';
+import logoSTTP from '../assets/logostt.png';
 
 export default function BantuanPage({ onNavigate, role }) {
   // Konten berdasarkan role
@@ -101,18 +102,52 @@ export default function BantuanPage({ onNavigate, role }) {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <button
-            onClick={() => onNavigate(`${role}-dashboard`)}
-            className="text-gray-600 hover:text-gray-900 font-semibold flex items-center gap-2 mb-3"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Kembali ke Dashboard
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900">{content.title}</h1>
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-4">
+          {/* Flex dengan shrink 0 pada kiri dan kanan agar tidak terpotong */}
+          <div className="flex items-center justify-between gap-2 sm:gap-4">
+            
+            {/* Kiri: Brand (logo + SIPATI + badge) - flex-shrink-0 agar tidak terpotong */}
+            <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+              <img
+                src={logoSTTP}
+                alt="Logo STT Pati"
+                className="w-8 h-8 sm:w-12 sm:h-12 md:w-16 md:h-16 object-contain"
+              />
+              <div className="flex items-center gap-1 sm:gap-2">
+                <h1 className="text-base sm:text-2xl md:text-[36px] font-bold text-blue-700 tracking-tight whitespace-nowrap">
+                  SIPATI
+                </h1>
+                <span className="bg-blue-100 text-blue-700 text-[8px] sm:text-[10px] font-semibold px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap">
+                  {role === 'admin' ? 'Admin' : role === 'dosen' ? 'Dosen' : role === 'mahasiswa' ? 'Mahasiswa' : 'SIPATI'}
+                </span>
+              </div>
+            </div>
+
+            {/* Tengah: Judul Halaman + Deskripsi - flex-1 agar mengambil ruang, min-w-0 agar bisa truncate */}
+            <div className="flex-1 text-center min-w-0 px-1 sm:px-2">
+              <h2 className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate">
+                Pusat Bantuan
+              </h2>
+              <p className="text-[10px] sm:text-xs md:text-sm text-gray-500 truncate hidden sm:block">
+                Panduan penggunaan sistem untuk {role === 'admin' ? 'Admin' : role === 'dosen' ? 'Dosen' : role === 'mahasiswa' ? 'Mahasiswa' : 'Pengguna'}
+              </p>
+            </div>
+
+            {/* Kanan: Tombol Kembali - flex-shrink-0 agar tidak terpotong */}
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <button
+                onClick={() => onNavigate(`${role}-dashboard`)}
+                className="text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium flex items-center gap-0.5 sm:gap-1 transition whitespace-nowrap"
+              >
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                <span className="hidden sm:inline">Kembali</span>
+              </button>
+            </div>
+
+          </div>
         </div>
       </header>
 

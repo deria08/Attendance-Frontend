@@ -120,7 +120,8 @@ const handleResetFace = async (userId, name) => {
     status: 'Aktif',
     face_registered: u.face_registered || false,   // ← penting
     prodi: u.prodi || '',
-    semester: u.semester || ''
+    semester: u.semester || '',
+    createdAt: u.createdAt || ''
   }));
 
 const dosenList = users
@@ -131,7 +132,8 @@ const dosenList = users
     nidn: u.nim_nidn, // ← ini juga
     email: u.email || '-',
     status: 'Aktif',
-    gelar: u.gelar || ''
+    gelar: u.gelar || '',
+    createdAt: u.createdAt || ''
   }))
   // registrasi mahasiswa
 const handleNavigate = (page, data = null) => {

@@ -23,18 +23,18 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
 
   // Hitung statistik per pertemuan untuk grafik
   const calculateChartData = () => {
-    if (!rekapData.length) return [];
-    const pertemuanStats = Array(16).fill().map(() => ({ hadir: 0, tidakHadir: 0, izin: 0, terlambat: 0 }));
-    rekapData.forEach(student => {
-      student.attendance.forEach((status, idx) => {
-        if (status === '✔') pertemuanStats[idx].hadir++;
-        else if (status === '✖') pertemuanStats[idx].tidakHadir++;
-        else if (status === 'i') pertemuanStats[idx].izin++;
-        else if (status === 'L') pertemuanStats[idx].terlambat++;
-      });
+  if (!rekapData.length) return [];
+  const pertemuanStats = Array(16).fill().map(() => ({ hadir: 0, tidakHadir: 0, izin: 0, terlambat: 0 }));
+  rekapData.forEach(student => {
+    student.attendance.forEach((status, idx) => {
+      if (status === '✔') pertemuanStats[idx].hadir++;
+      else if (status === 'X' || status === '✖') pertemuanStats[idx].tidakHadir++; // ⭐ tambahkan X
+      else if (status === 'i') pertemuanStats[idx].izin++;
+      else if (status === 'L') pertemuanStats[idx].terlambat++;
     });
-    return pertemuanStats.map((stat, idx) => ({ pertemuan: idx + 1, ...stat }));
-  };
+  });
+  return pertemuanStats.map((stat, idx) => ({ pertemuan: idx + 1, ...stat }));
+};
 
   // ⭐ Fungsi untuk menentukan periode akademik aktif
   const getCurrentAcademicPeriod = () => {
@@ -116,11 +116,22 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
     }
   }, [selectedCourse]);
 
-  // Update status manual
+  // Fungsi konversi simbol ke status backend
+  const mapSymbolToStatus = (symbol) => {
+    if (symbol === '✔') return 'success';
+    if (symbol === 'L') return 'late';
+    if (symbol === 'i') return 'izin';
+    if (symbol === 'X' || symbol === '✖') return 'failed';
+    return '';
+  };
+
+  // Ubah updateLocalStatus menjadi:
   const updateLocalStatus = async (studentIndex, pertemuanIndex, newStatus) => {
     const studentName = rekapData[studentIndex]?.nama;
     if (!studentName) return;
     const pertemuan = pertemuanIndex + 1;
+
+    const statusToSend = mapSymbolToStatus(newStatus); // ⭐ konversi
 
     try {
       const res = await fetch(`${FASTAPI_API_URL}/api/attendance/manual-update`, {
@@ -130,7 +141,7 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
           name: studentName,
           course_kode: selectedCourse,
           pertemuan: pertemuan,
-          status: newStatus
+          status: statusToSend // ⭐ kirim status yang sudah dikonversi
         })
       });
       if (!res.ok) throw new Error('Gagal update');
@@ -143,7 +154,7 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
 
   const statusOptions = [
     { symbol: '✔', label: 'Hadir', color: 'bg-green-100 text-green-700' },
-    { symbol: '✖', label: 'Tidak Hadir', color: 'bg-red-100 text-red-700' },
+    { symbol: 'X', label: 'Tidak Hadir', color: 'bg-red-100 text-red-700' },
     { symbol: 'i', label: 'Izin', color: 'bg-yellow-100 text-yellow-700' },
     { symbol: 'L', label: 'Terlambat', color: 'bg-orange-100 text-orange-700' }
   ];
@@ -176,62 +187,58 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white shadow-sm border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-        <div className="grid grid-cols-[auto,1fr,auto] items-center gap-4">
-          
-          {/* Kiri: Brand */}
-          <div className="flex items-center gap-3">
-            <img
-              src={logoSTTP}
-              alt="Logo STT Pati"
-              className="w-14 h-14 md:w-16 md:h-16 object-contain flex-shrink-0"
-            />
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl md:text-[36px] font-extrabold text-blue-700 tracking-tight">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-4">
+          {/* Flex dengan shrink 0 pada kiri dan kanan agar tidak terpotong */}
+          <div className="flex items-center justify-between gap-2 sm:gap-4">
+            
+            {/* Kiri: Brand (logo + SIPATI + badge) - flex-shrink-0 agar tidak terpotong */}
+            <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+              <img
+                src={logoSTTP}
+                alt="Logo STT Pati"
+                className="w-8 h-8 sm:w-12 sm:h-12 md:w-16 md:h-16 object-contain"
+              />
+              <div className="flex items-center gap-1 sm:gap-2">
+                <h1 className="text-base sm:text-2xl md:text-[36px] font-bold text-blue-700 tracking-tight whitespace-nowrap">
                   SIPATI
                 </h1>
-                <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                <span className="bg-blue-100 text-blue-700 text-[8px] sm:text-[10px] font-semibold px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap">
                   {userRole === 'dosen' ? 'Dosen' : 'Mahasiswa'}
                 </span>
               </div>
-              <p className="text-xs sm:text-sm text-gray-500 font-medium">
-                Sistem Informasi Presensi STT Pati
+            </div>
+
+            {/* Tengah: Judul Halaman + Deskripsi - flex-1 agar mengambil ruang, min-w-0 agar bisa truncate */}
+            <div className="flex-1 text-center min-w-0 px-1 sm:px-2">
+              <h2 className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate">
+                Rekap Absensi Mahasiswa
+              </h2>
+              <p className="text-[10px] sm:text-xs md:text-sm text-gray-500 truncate hidden sm:block">
+                {courseName || (courses.find(c => c.kode_mk === selectedCourse)?.nama_mk) || 'Belum pilih mata kuliah'} ({selectedCourse || '-'})
               </p>
             </div>
-          </div>
 
-          {/* Tengah: Judul Halaman */}
-          <div className="text-center">
-            <h2 className="text-lg md:text-xl font-bold text-gray-800">
-              Rekap Absensi Mahasiswa
-            </h2>
-            {/* <p className="text-xs sm:text-sm text-gray-500">
-              {courseName || (courses.find(c => c.kode_mk === selectedCourse)?.nama_mk)} ({selectedCourse})
-            </p> */}
-          </div>
-
-          {/* Kanan: Tombol Kembali + Download PDF */}
-          <div className="flex items-center gap-2 justify-end">
-            <button
-              onClick={() => onNavigate(userRole === 'dosen' ? 'dosen-dashboard' : 'mahasiswa-dashboard')}
-              className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1 transition"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Kembali
-            </button>
-            <button
-              onClick={downloadPdf}
-              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition text-sm flex items-center gap-1 whitespace-nowrap"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              PDF
-            </button>
-          </div>
+            {/* Kanan: Tombol Kembali + Download PDF - flex-shrink-0 agar tidak terpotong */}
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <button
+                onClick={() => onNavigate(userRole === 'dosen' ? 'dosen-dashboard' : 'mahasiswa-dashboard')}
+                className="text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium flex items-center gap-0.5 sm:gap-1 transition whitespace-nowrap"
+              >
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                <span className="hidden sm:inline">Kembali</span>
+              </button>
+              <button
+                onClick={downloadPdf}
+                className="bg-red-600 hover:bg-red-700 text-white font-semibold px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg transition text-xs sm:text-sm flex items-center gap-1 whitespace-nowrap"
+              >
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span className="hidden xs:inline">PDF</span>
+              </button>
+            </div>
 
           </div>
         </div>
@@ -305,23 +312,23 @@ export default function RekapAbsensiPage({ onNavigate, userRole, userId, selecte
                             className="px-4 py-4 text-center cursor-pointer"
                           >
                             <button
-                              className={`w-8 h-8 rounded font-bold text-sm transition ${
-                                isSelected
-                                  ? 'ring-2 ring-blue-500 ring-offset-2'
-                                  : status === '✔'
-                                  ? 'bg-green-100 text-green-700'
-                                  : status === '✖'
-                                  ? 'bg-red-100 text-red-700'
-                                  : status === 'i'
-                                  ? 'bg-yellow-100 text-yellow-700'
-                                  : status === 'L'
-                                  ? 'bg-orange-100 text-orange-700'
-                                  : 'bg-gray-100 text-gray-700'
-                              }`}
-                            >
-                              {status || '-'}
-                            </button>
-                          </td>
+                            className={`w-8 h-8 rounded font-bold text-sm transition ${
+                              isSelected
+                                ? 'ring-2 ring-blue-500 ring-offset-2'
+                                : status === '✔'
+                                ? 'bg-green-100 text-green-700'
+                                : status === 'X' || status === '✖'   // ⭐ tambahkan X
+                                ? 'bg-red-100 text-red-700'
+                                : status === 'i'
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : status === 'L'
+                                ? 'bg-orange-100 text-orange-700'
+                                : 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {status || '-'}
+                          </button>
+                        </td>
                         );
                       })}
                     </tr>

@@ -33,9 +33,19 @@ export default function ManajemenPengguna({
 
   const itemsPerPage = 10
 
+  // Helper untuk mendapatkan tanggal dari ObjectId MongoDB
+  const getDateFromObjectId = (id) => {
+    if (!id) return '-';
+    try {
+      const timestamp = parseInt(id.substring(0, 8), 16) * 1000;
+      return new Date(timestamp).toISOString().split('T')[0];
+    } catch (e) {
+      return '-';
+    }
+  };
+
   // Data user
   const allUsers = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
     const mahasiswaUsers = (mahasiswaList || []).map(m => ({
       id: `mhs_${m.id}`,
       originalId: m.id,
@@ -43,11 +53,11 @@ export default function ManajemenPengguna({
       username: m.nim || '-',
       email: m.email === '-' ? '' : (m.email || ''),
       role: 'Mahasiswa',
-      tanggalDibuat: today,
+      tanggalDibuat: getDateFromObjectId(m.id),
       status: m.status || 'Tidak Aktif',
       face_registered: faceStatus?.[m.nim] || false,
       prodi: m.prodi || '',
-      semester: String(m.semester || '')  // ⭐ pastikan string
+      semester: String(m.semester || '')
     }));
     const dosenUsers = (dosenList || []).map(d => ({
       id: `dsn_${d.id}`,
@@ -56,7 +66,7 @@ export default function ManajemenPengguna({
       username: d.nidn || '-',
       email: d.email === '-' ? '' : (d.email || ''),
       role: 'Dosen',
-      tanggalDibuat: today,
+      tanggalDibuat: getDateFromObjectId(d.id), // ✅ perbaiki dari m.id ke d.id
       status: d.status || 'Tidak Aktif',
       gelar: d.gelar || '',
       prodi: '-',
@@ -77,7 +87,6 @@ export default function ManajemenPengguna({
     const semesters = allUsers
       .filter(u => u.role === 'Mahasiswa' && u.semester)
       .map(u => u.semester);
-    // urutkan ascending
     return ['', ...new Set(semesters)].sort((a, b) => {
       if (a === '') return -1;
       if (b === '') return 1;
@@ -97,7 +106,6 @@ export default function ManajemenPengguna({
 
       const matchesRole = filterRole === 'semua' || user.role?.toLowerCase() === filterRole.toLowerCase()
 
-      // ⭐ Filter Prodi dan Semester (perbaikan perbandingan)
       let matchesProdiSemester = true
       if (filterProdi || filterSemester) {
         if (user.role !== 'Mahasiswa') {
@@ -111,7 +119,6 @@ export default function ManajemenPengguna({
       return matchesSearch && matchesRole && matchesProdiSemester
     })
 
-    // Sorting
     const fieldMap = {
       nama: 'nama',
       username: 'username',
@@ -217,52 +224,53 @@ export default function ManajemenPengguna({
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="grid grid-cols-[auto,1fr,auto] items-center gap-4">
-            <div className="flex items-center gap-3">
-              <img 
-                src={logoSTTP} 
-                alt="Logo STT Pati" 
-                className="w-14 h-14 md:w-16 md:h-16 object-contain flex-shrink-0" 
-              />
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl md:text-[36px] font-extrabold text-blue-700 tracking-tight">
-                    SIPATI
-                  </h1>
-                  <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                    Admin
-                  </span>
-                </div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">
-                  Sistem Informasi Presensi STT Pati
-                </p>
-              </div>
-            </div>
-
-            <div className="text-center">
-              <h2 className="text-lg md:text-xl font-bold text-gray-800">
-                Kelola Akun
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-500">
-                Kelola Akun untuk Dosen dan Mahasiswa
-              </p>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={() => onNavigate('admin-dashboard')}
-                className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1 transition"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-                Kembali
-              </button>
-            </div>
-          </div>
+  <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-4">
+    {/* Flex dengan shrink 0 pada kiri dan kanan agar tidak terpotong */}
+    <div className="flex items-center justify-between gap-2 sm:gap-4">
+      
+      {/* Kiri: Brand (logo + SIPATI + badge) - flex-shrink-0 agar tidak terpotong */}
+      <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+        <img
+          src={logoSTTP}
+          alt="Logo STT Pati"
+          className="w-8 h-8 sm:w-12 sm:h-12 md:w-16 md:h-16 object-contain"
+        />
+        <div className="flex items-center gap-1 sm:gap-2">
+          <h1 className="text-base sm:text-2xl md:text-[36px] font-bold text-blue-700 tracking-tight whitespace-nowrap">
+            SIPATI
+          </h1>
+          <span className="bg-blue-100 text-blue-700 text-[8px] sm:text-[10px] font-semibold px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap">
+            Admin
+          </span>
         </div>
-      </header>
+      </div>
+
+      {/* Tengah: Judul Halaman + Deskripsi - flex-1 agar mengambil ruang, min-w-0 agar bisa truncate */}
+      <div className="flex-1 text-center min-w-0 px-1 sm:px-2">
+        <h2 className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate">
+          Kelola Akun
+        </h2>
+        <p className="text-[10px] sm:text-xs md:text-sm text-gray-500 truncate hidden sm:block">
+          Kelola Akun untuk Dosen dan Mahasiswa
+        </p>
+      </div>
+
+      {/* Kanan: Tombol Kembali - flex-shrink-0 agar tidak terpotong */}
+      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+        <button
+          onClick={() => onNavigate('admin-dashboard')}
+          className="text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium flex items-center gap-0.5 sm:gap-1 transition whitespace-nowrap"
+        >
+          <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          <span className="hidden sm:inline">Kembali</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {feedbackMessage && (
@@ -334,12 +342,12 @@ export default function ManajemenPengguna({
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="nama">Nama</option>
-                  {/* <option value="username">NIM/NIDN</option> */}
-                  {/* <option value="role">Role</option> */}
+                  <option value="username">NIM/NIDN</option>
+                  <option value="role">Role</option>
                   <option value="prodi">Prodi</option>
                   <option value="semester">Semester</option>
-                  {/* <option value="status">Status</option> */}
-                  {/* <option value="tanggalDibuat">Tanggal Dibuat</option> */}
+                  <option value="status">Status</option>
+                  <option value="tanggalDibuat">Tanggal Dibuat</option>
                 </select>
                 <button
                   onClick={toggleSortOrder}

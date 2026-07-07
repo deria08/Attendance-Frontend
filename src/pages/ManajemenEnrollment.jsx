@@ -223,55 +223,53 @@ export default function ManajemenEnrollment({ onNavigate, userData }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="grid grid-cols-[auto,1fr,auto] items-center gap-4">
-            {/* Kiri: Brand */}
-            <div className="flex items-center gap-3">
-              <img
-                src={logoSTTP}
-                alt="Logo STT Pati"
-                className="w-14 h-14 md:w-16 md:h-16 object-contain flex-shrink-0"
-              />
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl md:text-[36px] font-extrabold text-blue-700 tracking-tight">
-                    SIPATI
-                  </h1>
-                  <span className="bg-blue-100 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                    Admin
-                  </span>
-                </div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">
-                  Sistem Informasi Presensi STT Pati
-                </p>
-              </div>
-            </div>
-
-            {/* Tengah: Judul Halaman */}
-            <div className="text-center">
-              <h2 className="text-lg md:text-xl font-bold text-gray-800">
-                Manajemen Enrollment
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-500">
-                Daftarkan mahasiswa ke mata kuliah
-              </p>
-            </div>
-
-            {/* Kanan: Tombol Kembali */}
-            <div className="flex justify-end">
-              <button
-                onClick={() => onNavigate('admin-dashboard')}
-                className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1 transition"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-                Kembali
-              </button>
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-4">
+        {/* Flex dengan shrink 0 pada kiri dan kanan agar tidak terpotong */}
+        <div className="flex items-center justify-between gap-2 sm:gap-4">
+          
+          {/* Kiri: Brand (logo + SIPATI + badge) - flex-shrink-0 agar tidak terpotong */}
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+            <img
+              src={logoSTTP}
+              alt="Logo STT Pati"
+              className="w-8 h-8 sm:w-12 sm:h-12 md:w-16 md:h-16 object-contain"
+            />
+            <div className="flex items-center gap-1 sm:gap-2">
+              <h1 className="text-base sm:text-2xl md:text-[36px] font-bold text-blue-700 tracking-tight whitespace-nowrap">
+                SIPATI
+              </h1>
+              <span className="bg-blue-100 text-blue-700 text-[8px] sm:text-[10px] font-semibold px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap">
+                Admin
+              </span>
             </div>
           </div>
+
+          {/* Tengah: Judul Halaman + Deskripsi - flex-1 agar mengambil ruang, min-w-0 agar bisa truncate */}
+          <div className="flex-1 text-center min-w-0 px-1 sm:px-2">
+            <h2 className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate">
+              Manajemen Enrollment
+            </h2>
+            <p className="text-[10px] sm:text-xs md:text-sm text-gray-500 truncate hidden sm:block">
+              Daftarkan mahasiswa ke mata kuliah
+            </p>
+          </div>
+
+          {/* Kanan: Tombol Kembali - flex-shrink-0 agar tidak terpotong */}
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <button
+              onClick={() => onNavigate('admin-dashboard')}
+              className="text-blue-600 hover:text-blue-800 text-xs sm:text-sm font-medium flex items-center gap-0.5 sm:gap-1 transition whitespace-nowrap"
+            >
+              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="hidden sm:inline">Kembali</span>
+            </button>
+          </div>
+
         </div>
-      </header>
+      </div>
+    </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {message.text && (
@@ -339,15 +337,21 @@ export default function ManajemenEnrollment({ onNavigate, userData }) {
                             setSelectedMahasiswa(enrollment.mahasiswa?._id || '');
                             setShowEditModal(true);
                           }}
-                          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                          className="bg-blue-100 hover:bg-blue-200 text-blue-700 p-2 rounded transition"
+                          title="Edit"
                         >
-                          Edit
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
                         </button>
                         <button
                           onClick={() => handleDeleteEnrollment(enrollment._id)}
-                          className="text-red-600 hover:text-red-800 text-sm font-medium"
+                          className="bg-red-100 hover:bg-red-200 text-red-700 p-2 rounded transition"
+                          title="Delete"
                         >
-                          Hapus
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                         </button>
                       </div>
                     </li>
