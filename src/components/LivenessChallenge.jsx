@@ -56,7 +56,7 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
   const [totalSteps, setTotalSteps] = useState(2);
   const [nextChallenge, setNextChallenge] = useState(null);
   const [instruction, setInstruction] = useState('');
-  const [timeLeft, setTimeLeft] = useState(10);
+  const [timeLeft, setTimeLeft] = useState(12);
   const [remainingAttempts, setRemainingAttempts] = useState(3);
   const [status, setStatus] = useState(STATUS.IDLE);
   const [error, setError] = useState(null);
@@ -143,7 +143,7 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
       setNextChallenge(data.next_challenge);
       setInstruction(buildInstruction(data.next_challenge));
 
-      setTimeLeft(data.timeout_seconds || 10);
+      setTimeLeft(data.timeout_seconds || 12);
       setRemainingAttempts(data.remaining_attempts || 3);
 
       statusRef.current = STATUS.IDLE;
@@ -162,7 +162,7 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
 
   const startCountdown = () => {
     if (countdownInterval.current) clearInterval(countdownInterval.current);
-    setTimeLeft(10);
+    setTimeLeft(12);
     countdownInterval.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
@@ -211,7 +211,7 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
     setError(null);
 
     const frames = [];
-    const FRAME_COUNT = 30;
+    const FRAME_COUNT = 45;
     const INTERVAL_MS = 70;
 
     captureInterval.current = setInterval(() => {
@@ -297,7 +297,7 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
         setTotalSteps(data.total_steps);
         setNextChallenge(data.next_challenge);
         setInstruction(buildInstruction(data.next_challenge));
-        setTimeLeft(data.timeout_seconds || 10);
+        setTimeLeft(data.timeout_seconds || 12);
         setRemainingAttempts(data.remaining_attempts || 3);
         setError(null);
         statusRef.current = STATUS.IDLE;

@@ -191,10 +191,10 @@ export default function FaceRecognitionPage({
     canvas.height = actualCropHeight
     const context = canvas.getContext('2d')
     context.drawImage(video, startX, startY, actualCropWidth, actualCropHeight, 0, 0, actualCropWidth, actualCropHeight)
-    return canvas.toDataURL('image/jpeg', 0.9)
+    return canvas.toDataURL('image/jpeg', 0.92)
   }
 
-  const captureMultipleFrames = async (frameCount = 15, intervalMs = 700) => {
+  const captureMultipleFrames = async (frameCount = 10, intervalMs = 300) => {
   const frames = []
   for (let i = 0; i < frameCount; i++) {
     const dataUrl = capturePhoto()
@@ -206,20 +206,80 @@ export default function FaceRecognitionPage({
 
 
 
-  const getLocation = () => {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) reject(new Error('Geolocation tidak didukung browser ini'))
-      else navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })
-    })
-  }
+  // const getLocation = () => {
+  //   return new Promise((resolve, reject) => {
+  //     if (!navigator.geolocation) reject(new Error('Geolocation tidak didukung browser ini'))
+  //     else navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })
+  //   })
+  // }
+  const getLocationSamples = (sampleCount = 8, intervalMs = 700) => {
+  return new Promise((resolve, reject) => {
+    const samples = [];
+    let completed = 0;
+    let timedOut = false;
+
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      if (samples.length >= 3) {
+        resolve(samples); // jika ada cukup sampel, lanjutkan
+      } else {
+        reject(new Error('Timeout mengambil GPS'));
+      }
+    }, 10000);
+
+    const takeSample = () => {
+      if (timedOut || completed >= sampleCount) {
+        clearTimeout(timeoutId);
+        resolve(samples);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          samples.push({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: position.timestamp
+          });
+          completed++;
+          // Jika sudah cukup, selesai
+          if (completed >= sampleCount) {
+            clearTimeout(timeoutId);
+            resolve(samples);
+            return;
+          }
+          // Jadwalkan sample berikutnya
+          setTimeout(takeSample, intervalMs);
+        },
+        (error) => {
+          // Jika error, tetap lanjutkan dengan sample yang ada
+          completed++;
+          if (completed >= sampleCount) {
+            clearTimeout(timeoutId);
+            resolve(samples);
+            return;
+          }
+          setTimeout(takeSample, intervalMs);
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    };
+
+    // Mulai sample pertama
+    takeSample();
+  });
+};
 
   // ========== TAKE ATTENDANCE (tanpa mengirim pertemuan manual) ==========
-  const takeAttendance = async (framesDataUrls, lat, lon) => {
+  const takeAttendance = async (framesDataUrls, lat, lon, accuracy, samples) => {
   const formData = new FormData()
   formData.append('name', userName)
   formData.append('course_kode', selectedCourse)
   formData.append('lat', lat.toString())
   formData.append('lon', lon.toString())
+  formData.append('accuracy', accuracy.toString());
+  formData.append('gps_samples', JSON.stringify(samples)); // ⭐ kirim samples
   for (let i = 0; i < framesDataUrls.length; i++) {
     const blob = await fetch(framesDataUrls[i]).then(res => res.blob())
     formData.append('files', blob, `frame${i}.jpg`)
@@ -279,49 +339,51 @@ export default function FaceRecognitionPage({
 
   // ===== PROSES ABSENSI (Face Recognition) =====
   const processAttendance = async () => {
-    setIsScanning(true);
-    setCameraError('');
+  setIsScanning(true);
+  setCameraError('');
 
-    try {
-      // Ambil frame
-      const frames = await captureMultipleFrames(15, 700);
-      if (frames.length < 10) {
-        throw new Error('Gagal mengambil cukup frame (kurang dari 10)');
-      }
-
-      // Ambil lokasi
-      let position;
-      try {
-        position = await getLocation();
-      } catch (locError) {
-        throw new Error('Tidak dapat mengakses lokasi. Pastikan GPS aktif dan izinkan akses lokasi.');
-      }
-      const { latitude, longitude } = position.coords;
-
-      // Kirim ke backend
-      const result = await takeAttendance(frames, latitude, longitude);
-
-      setScanResult(result);
-      setShowResultModal(true);
-      if (result.success) {
-        setAttendanceStatus(prev => ({ ...prev, [selectedCourse]: true }));
-      }
-    } catch (error) {
-      console.error('Full error:', error);
-      let userMessage = error.message || 'Gagal melakukan scan wajah';
-      if (userMessage.includes('Liveness detection gagal')) {
-        userMessage = '❌ Liveness detection gagal.\n\nPastikan Anda:\n• Berkedip secara alami\n• Menggerakkan kepala sedikit (angguk/geleng)\n• Pencahayaan cukup\n• Wajah terlihat jelas\n\nSilakan coba lagi.';
-      }
-      setScanResult({
-        success: false,
-        message: userMessage,
-        timestamp: new Date().toLocaleTimeString('id-ID')
-      });
-      setShowResultModal(true);
-    } finally {
-      setIsScanning(false);
+  try {
+    // 1. Ambil multi-sample GPS
+    const samples = await getLocationSamples(8, 700);
+    if (samples.length < 8) {
+      throw new Error('Gagal mengambil cukup sampel GPS (minimal 8)');
     }
-  };
+
+    // 2. Hitung rata-rata koordinat dan akurasi
+    const avgLat = samples.reduce((sum, p) => sum + p.lat, 0) / samples.length;
+    const avgLon = samples.reduce((sum, p) => sum + p.lon, 0) / samples.length;
+    const avgAcc = samples.reduce((sum, p) => sum + p.accuracy, 0) / samples.length;
+
+    // 3. Ambil frame wajah
+    const frames = await captureMultipleFrames(10, 300);
+    if (frames.length < 10) {
+      throw new Error('Gagal mengambil cukup frame (kurang dari 10)');
+    }
+
+    // 4. Kirim ke backend dengan samples
+    const result = await takeAttendance(frames, avgLat, avgLon, avgAcc, samples);
+
+    setScanResult(result);
+    setShowResultModal(true);
+    if (result.success) {
+      setAttendanceStatus(prev => ({ ...prev, [selectedCourse]: true }));
+    }
+  } catch (error) {
+    console.error('Full error:', error);
+    let userMessage = error.message || 'Gagal melakukan scan wajah';
+    if (userMessage.includes('Liveness detection gagal')) {
+      userMessage = '❌ Liveness detection gagal.\n\nPastikan Anda:\n• Berkedip secara alami\n• Menggerakkan kepala sedikit (angguk/geleng)\n• Pencahayaan cukup\n• Wajah terlihat jelas\n\nSilakan coba lagi.';
+    }
+    setScanResult({
+      success: false,
+      message: userMessage,
+      timestamp: new Date().toLocaleTimeString('id-ID')
+    });
+    setShowResultModal(true);
+  } finally {
+    setIsScanning(false);
+  }
+};
 
   // ===== HANDLER LIVENESS =====
 const handleLivenessSuccess = async () => {

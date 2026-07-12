@@ -19,6 +19,156 @@ export default function ManajemenEnrollment({ onNavigate, userData }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAllStudents, setShowAllStudents] = useState(false);
 
+  // ===== STATE UNTUK IMPORT =====
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [importId, setImportId] = useState(null);
+  const [importStep, setImportStep] = useState('upload'); // upload | preview | confirm
+  const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState(null); // ⬅️ TAMBAHKAN INI
+   // ===== FUNGSI IMPORT =====
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (!['xlsx', 'xls'].includes(ext)) {
+        alert('Hanya file Excel (.xlsx, .xls) yang diperbolehkan.');
+        e.target.value = '';
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  const handleUploadPreview = async () => {
+  if (!selectedFile) {
+    alert('Pilih file terlebih dahulu.');
+    return;
+  }
+
+  setImportLoading(true);
+  setImportError(null);
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  formData.append('action', 'preview');
+
+  try {
+    // ⭐ Gunakan fetch langsung, JANGAN pakai apiFetch
+    const res = await fetch(`${EXPRESS_API_URL}/enrollments/import`, {
+      method: 'POST',
+      body: formData, // browser akan set Content-Type otomatis
+      headers: {
+        // Jangan set Content-Type, biarkan browser yang set
+        'Authorization': `Bearer ${sessionStorage.getItem('token')}` // jika perlu
+      }
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || 'Gagal preview');
+    }
+
+    setPreviewData(data);
+    setImportId(data.importId);
+    setImportStep('preview');
+  } catch (err) {
+    setImportError(err.message);
+    alert(err.message);
+  } finally {
+    setImportLoading(false);
+  }
+};
+
+ const handleConfirmImport = async () => {
+  if (!importId) {
+    alert('Session import tidak ditemukan.');
+    return;
+  }
+
+  setImportLoading(true);
+  try {
+    // ⭐ Gunakan fetch langsung
+    const res = await fetch(`${EXPRESS_API_URL}/enrollments/import`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+      },
+      body: JSON.stringify({
+        action: 'confirm',
+        importId
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || 'Gagal import');
+    }
+
+    setImportResult(data);
+    setImportStep('confirm');
+
+    // Refresh data
+    fetchEnrolledStudents();
+
+    setTimeout(() => {
+      setShowImportModal(false);
+      resetImportState();
+    }, 3000);
+
+  } catch (err) {
+    setImportError(err.message);
+    alert(err.message);
+  } finally {
+    setImportLoading(false);
+  }
+};
+
+  const downloadTemplate = async () => {
+    try {
+      const res = await apiFetch(`${EXPRESS_API_URL}/enrollments/template`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'template_enrollment.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Gagal download template: ' + err.message);
+    }
+  };
+
+  const downloadValidationResult = async () => {
+    if (!previewData || previewData.errors.length === 0) {
+      alert('Tidak ada error untuk diekspor.');
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`${EXPRESS_API_URL}/enrollments/import/export-errors`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ errors: previewData.errors })
+      });
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'hasil_validasi_import.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Gagal download hasil validasi: ' + err.message);
+    }
+  };
   // Ambil daftar mata kuliah
   useEffect(() => {
     fetchCourses();
@@ -220,8 +370,163 @@ export default function ManajemenEnrollment({ onNavigate, userData }) {
     setShowAllStudents(false);
   };
 
+  // ===== RENDER MODAL IMPORT =====
+  const renderImportModal = () => {
+    return (
+      <Modal isOpen={showImportModal} onClose={() => { setShowImportModal(false); resetImportState(); }} title="Import Excel Enrollment" size="xl">
+        <div className="space-y-4">
+          {/* STEP 1: Upload */}
+          {importStep === 'upload' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pilih File Excel (.xlsx, .xls)
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleFileChange}
+                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  />
+                </div>
+                {selectedFile && (
+                  <p className="text-sm text-green-600 mt-2">
+                    File terpilih: {selectedFile.name}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  onClick={handleUploadPreview}
+                  disabled={!selectedFile || importLoading}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition disabled:opacity-50"
+                >
+                  {importLoading ? 'Memproses...' : 'Preview Data'}
+                </button>
+                <button
+                  onClick={downloadTemplate}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg transition"
+                >
+                  Download Template
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* STEP 2: Preview */}
+          {importStep === 'preview' && previewData && (
+            <>
+              <div className="grid grid-cols-4 gap-3 bg-gray-50 p-4 rounded-lg">
+                <div className="text-center">
+                  <p className="text-sm text-gray-500">Total Data</p>
+                  <p className="text-2xl font-bold text-gray-800">{previewData.total}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-green-600">Valid</p>
+                  <p className="text-2xl font-bold text-green-600">{previewData.validCount}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-yellow-600">Duplikat</p>
+                  <p className="text-2xl font-bold text-yellow-600">{previewData.duplicateCount}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-red-600">Error</p>
+                  <p className="text-2xl font-bold text-red-600">{previewData.errorCount}</p>
+                </div>
+              </div>
+
+              {/* Tabel Preview */}
+              <div className="overflow-auto max-h-80 border rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Baris</th>
+                      <th className="px-3 py-2 text-left">Kode MK</th>
+                      <th className="px-3 py-2 text-left">NIM</th>
+                      <th className="px-3 py-2 text-left">Status</th>
+                      <th className="px-3 py-2 text-left">Keterangan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewData.validData?.map((item, idx) => (
+                      <tr key={`valid-${idx}`} className="bg-green-50">
+                        <td className="px-3 py-1.5">{item.row}</td>
+                        <td className="px-3 py-1.5">{item.kodeMk}</td>
+                        <td className="px-3 py-1.5">{item.nim}</td>
+                        <td className="px-3 py-1.5"><span className="text-green-600 font-semibold">✓ Valid</span></td>
+                        <td className="px-3 py-1.5">{item.name}</td>
+                      </tr>
+                    ))}
+                    {previewData.errors?.map((err, idx) => (
+                      <tr key={`err-${idx}`} className={err.status === 'duplicate' ? 'bg-yellow-50' : 'bg-red-50'}>
+                        <td className="px-3 py-1.5">{err.row}</td>
+                        <td className="px-3 py-1.5">{err.kodeMk}</td>
+                        <td className="px-3 py-1.5">{err.nim}</td>
+                        <td className="px-3 py-1.5">
+                          <span className={err.status === 'duplicate' ? 'text-yellow-600 font-semibold' : 'text-red-600 font-semibold'}>
+                            {err.status === 'duplicate' ? '⚠ Duplikat' : '✗ Error'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5">{err.errors || err.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  onClick={handleConfirmImport}
+                  disabled={importLoading || previewData.validCount === 0}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition disabled:opacity-50"
+                >
+                  {importLoading ? 'Menyimpan...' : `Import ${previewData.validCount} Data`}
+                </button>
+                {previewData.errors.length > 0 && (
+                  <button
+                    onClick={downloadValidationResult}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition"
+                  >
+                    Download Error
+                  </button>
+                )}
+                <button
+                  onClick={() => { setImportStep('upload'); resetImportState(); }}
+                  className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition"
+                >
+                  Kembali
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* STEP 3: Hasil */}
+          {importStep === 'confirm' && importResult && (
+            <div className="text-center py-8">
+              <div className="text-5xl mb-4">✅</div>
+              <h3 className="text-2xl font-bold text-gray-800 mb-2">Import Berhasil!</h3>
+              <p className="text-gray-600">{importResult.message}</p>
+              <p className="text-sm text-gray-500 mt-4">
+                {importResult.importedCount} data berhasil ditambahkan.
+                {importResult.failedItems?.length > 0 && ` ${importResult.failedItems.length} data gagal.`}
+              </p>
+            </div>
+          )}
+
+          {importError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">
+              {importError}
+            </div>
+          )}
+        </div>
+      </Modal>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-4">
         {/* Flex dengan shrink 0 pada kiri dan kanan agar tidak terpotong */}
@@ -272,6 +577,28 @@ export default function ManajemenEnrollment({ onNavigate, userData }) {
     </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Tombol Action di atas tabel */}
+        <div className="flex flex-wrap gap-3 mb-6">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
+          >
+            + Tambah Manual
+          </button>
+          <button
+            onClick={downloadTemplate}
+            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition"
+          >
+            📥 Download Template
+          </button>
+          <button
+            onClick={() => { setImportStep('upload'); setShowImportModal(true); resetImportState(); }}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition"
+          >
+            📤 Import Excel
+          </button>
+        </div>
+
         {message.text && (
           <div
             className={`mb-6 p-4 rounded-lg ${
@@ -306,12 +633,7 @@ export default function ManajemenEnrollment({ onNavigate, userData }) {
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-gray-900">Mahasiswa Terdaftar</h2>
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
-                >
-                  + Tambah Mahasiswa
-                </button>
+                {/* Tombol + Tambah Mahasiswa dihapus karena sudah ada di atas */}
               </div>
               {loading ? (
                 <p className="text-gray-500">Memuat...</p>
@@ -387,7 +709,8 @@ export default function ManajemenEnrollment({ onNavigate, userData }) {
           </div>
         )}
       </main>
-
+      {/* Modal Import */}
+      {renderImportModal()}
       {/* Modal Tambah Mahasiswa */}
       {showAddModal && (
         <Modal isOpen={true} onClose={resetAddModal} title="Tambah Mahasiswa ke Mata Kuliah">
