@@ -26,6 +26,7 @@
     "tailwindcss-animate": "1.0.7",
     "terser": "latest",
     "tsx": "latest",
+    "xlsx": "^0.18.5",
     "yaml": "latest"
   },
   "devDependencies": {
