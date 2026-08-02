@@ -132,7 +132,7 @@ export default function FaceRecognitionPage({
     }
   }, [courses, selectedCourse]);
 
-  // ===== 5. Kamera (Perbaikan utama) =====
+  // ===== 5. Kamera =====
   const initCamera = useCallback(async () => {
     setCameraError('');
     setCameraReady(false);
@@ -143,16 +143,9 @@ export default function FaceRecognitionPage({
       setCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // Coba mainkan video
-        await videoRef.current.play().catch((err) => {
-          console.warn('Video play error:', err);
-        });
-        // Setelah play, coba periksa langsung
-        if (videoRef.current.videoWidth > 0) {
-          setCameraReady(true);
-        }
+        await videoRef.current.play().catch((err) => console.warn('Play error:', err));
+        console.log('Video element srcObject set and play() called');
       }
-      console.log('Kamera aktif');
     } catch (error) {
       console.error('Camera error:', error);
       setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.');
@@ -160,6 +153,7 @@ export default function FaceRecognitionPage({
     }
   }, []);
 
+  // Auto init saat mount
   useEffect(() => {
     initCamera();
     return () => {
@@ -169,48 +163,60 @@ export default function FaceRecognitionPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Polling untuk memastikan cameraReady
+  // Polling untuk deteksi cameraReady
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !cameraActive) return;
 
     let frameId = null;
     let attempts = 0;
-    const maxAttempts = 50; // ~5 detik (100ms per attempt)
+    const maxAttempts = 60; // ~6 detik
 
     const checkReady = () => {
       attempts++;
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
+      // Video siap jika readyState >= 2 dan dimensi > 0
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
         console.log('Camera ready (polling)');
         setCameraReady(true);
-        cancelAnimationFrame(frameId);
         return;
       }
       if (attempts < maxAttempts) {
         frameId = requestAnimationFrame(checkReady);
       } else {
-        // Setelah timeout, jika masih belum siap, set ready true sebagai fallback
-        console.warn('Camera not ready after timeout, forcing ready');
-        setCameraReady(true);
+        // Fallback: jika masih belum siap, coba mainkan ulang
+        video.play().catch(() => {});
+        setTimeout(() => {
+          if (video.readyState >= 2 && video.videoWidth > 0) {
+            setCameraReady(true);
+          } else {
+            // Force ready agar tombol bisa diklik (tapi mungkin video tetap tidak tampil)
+            console.warn('Force camera ready after timeout');
+            setCameraReady(true);
+          }
+        }, 500);
       }
     };
 
-    // Mulai polling
-    frameId = requestAnimationFrame(checkReady);
+    // Jika sudah siap langsung
+    if (video.readyState >= 2 && video.videoWidth > 0) {
+      setCameraReady(true);
+    } else {
+      frameId = requestAnimationFrame(checkReady);
+    }
 
-    // Juga pasang event listener untuk loadedmetadata
-    const onLoadedMetadata = () => {
-      if (video.videoWidth > 0) {
-        console.log('Camera ready (loadedmetadata)');
+    // Event listener loadeddata sebagai cadangan
+    const onLoadedData = () => {
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        console.log('Camera ready (loadeddata)');
         setCameraReady(true);
-        cancelAnimationFrame(frameId);
+        if (frameId) cancelAnimationFrame(frameId);
       }
     };
-    video.addEventListener('loadedmetadata', onLoadedMetadata);
+    video.addEventListener('loadeddata', onLoadedData);
 
     return () => {
-      cancelAnimationFrame(frameId);
-      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+      if (frameId) cancelAnimationFrame(frameId);
+      video.removeEventListener('loadeddata', onLoadedData);
     };
   }, [cameraActive]);
 
@@ -448,8 +454,11 @@ export default function FaceRecognitionPage({
 
   // ===== Handler Start Scan =====
   const handleStartScan = useCallback(() => {
+    // Jika kamera belum siap, coba init ulang
     if (!cameraReady) {
-      setCameraError('Kamera belum siap, tunggu sebentar...');
+      console.log('Camera not ready, re-initializing...');
+      initCamera();
+      setCameraError('Kamera sedang diaktifkan, tunggu sebentar...');
       return;
     }
     if (attendanceStatus[selectedCourse]) {
@@ -477,7 +486,7 @@ export default function FaceRecognitionPage({
     }
 
     setShowLiveness(true);
-  }, [cameraReady, attendanceStatus, selectedCourse, activeMeeting, livenessCompleted, processAttendance]);
+  }, [cameraReady, initCamera, attendanceStatus, selectedCourse, activeMeeting, livenessCompleted, processAttendance]);
 
   // ===== Handler Liveness =====
   const handleLivenessSuccess = useCallback(async () => {
@@ -623,7 +632,7 @@ export default function FaceRecognitionPage({
                       </svg>
                       <p className="text-gray-400 text-sm text-center mb-3">{cameraError}</p>
                       <button
-                        onClick={initCamera}
+                        onClick={() => initCamera()}
                         className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm"
                       >
                         Coba Aktifkan Kamera
@@ -650,7 +659,14 @@ export default function FaceRecognitionPage({
                     </div>
                   ) : (
                     <>
-                      <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover"
+                        style={{ minHeight: '100%' }}
+                      />
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="relative w-40 h-56 border-2 border-yellow-400 rounded-2xl opacity-70">
                           <div className="absolute top-12 left-6 w-6 h-6 border-2 border-white rounded-full opacity-50"></div>
