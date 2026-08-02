@@ -11,39 +11,49 @@ export default function FaceRecognitionPage({
   userName,
   userId,
 }) {
-  // State kamera
+  // ==================== STATE KAMERA ====================
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [cameraInitializing, setCameraInitializing] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
-  // State liveness
+  // ==================== STATE LIVENESS ====================
   const [showLiveness, setShowLiveness] = useState(false);
   const [livenessCompleted, setLivenessCompleted] = useState(false);
 
-  // State proses scan
+  // ==================== STATE PROSES SCAN ====================
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [showResultModal, setShowResultModal] = useState(false);
   const [progressSteps, setProgressSteps] = useState([]);
 
-  // Status absensi
+  // ==================== STATUS ABSENSI ====================
   const [attendanceStatus, setAttendanceStatus] = useState({});
 
-  // Data mata kuliah
+  // ==================== DATA MATA KULIAH ====================
   const [courses, setCourses] = useState([]);
   const [coursesLoading, setCoursesLoading] = useState(true);
   const [coursesError, setCoursesError] = useState(null);
   const [selectedCourse, setSelectedCourse] = useState('');
 
-  // Meeting aktif
+  // ==================== MEETING AKTIF ====================
   const [activeMeeting, setActiveMeeting] = useState(null);
   const [activeMeetingLoading, setActiveMeetingLoading] = useState(false);
   const [activeMeetingError, setActiveMeetingError] = useState(null);
 
-  // ===== Fungsi updateProgress =====
+  // ==================== DEBUG INFO (untuk tampil di UI) ====================
+  const [debugInfo, setDebugInfo] = useState({
+    cameraInitAttempts: 0,
+    lastError: null,
+    videoWidth: 0,
+    videoHeight: 0,
+    canPlayFired: false,
+  });
+
+  // ==================== FUNGSI UPDATE PROGRESS ====================
   const updateProgress = useCallback((stepIndex, status, label) => {
     setProgressSteps((prev) => {
       const newSteps = [...prev];
@@ -56,7 +66,7 @@ export default function FaceRecognitionPage({
     });
   }, []);
 
-  // ===== 1. Ambil daftar course =====
+  // ==================== 1. AMBIL DAFTAR COURSE ====================
   useEffect(() => {
     const fetchCourses = async () => {
       setCoursesLoading(true);
@@ -78,7 +88,7 @@ export default function FaceRecognitionPage({
     fetchCourses();
   }, [userName]);
 
-  // ===== 2. Cek meeting aktif =====
+  // ==================== 2. CEK MEETING AKTIF ====================
   useEffect(() => {
     if (selectedCourse && courses.length) {
       const course = courses.find((c) => c.kode_mk === selectedCourse);
@@ -103,7 +113,7 @@ export default function FaceRecognitionPage({
     }
   }, [selectedCourse, courses]);
 
-  // ===== 3. Cek status absensi =====
+  // ==================== 3. CEK STATUS ABSENSI ====================
   const checkAttendanceStatus = useCallback(
     async (courseKode) => {
       try {
@@ -125,44 +135,70 @@ export default function FaceRecognitionPage({
     if (selectedCourse) checkAttendanceStatus(selectedCourse);
   }, [selectedCourse, checkAttendanceStatus]);
 
-  // ===== 4. Default course =====
+  // ==================== 4. DEFAULT COURSE ====================
   useEffect(() => {
     if (courses.length > 0 && !selectedCourse) {
       setSelectedCourse(courses[0].kode_mk);
     }
   }, [courses, selectedCourse]);
 
-  // ===== 5. Kamera =====
+  // ==================== 5. KAMERA - INISIALISASI ====================
+  const stopCameraTracks = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
   const initCamera = useCallback(async () => {
     setCameraError('');
     setCameraReady(false);
+    setCameraInitializing(true);
+    setDebugInfo((prev) => ({
+      ...prev,
+      cameraInitAttempts: prev.cameraInitAttempts + 1,
+      lastError: null,
+      videoWidth: 0,
+      videoHeight: 0,
+      canPlayFired: false,
+    }));
+
     try {
       console.log('Meminta akses kamera...');
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
       setCameraActive(true);
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch((err) => console.error('Error playing video:', err));
+        try {
+          await videoRef.current.play();
+          console.log('Video play berhasil');
+        } catch (playErr) {
+          console.error('Error playing video:', playErr);
+          // Jika play gagal (autoplay policy), hentikan stream dan beri error
+          stopCameraTracks();
+          setCameraActive(false);
+          setCameraError(
+            'Tidak dapat memutar video. Klik tombol "Aktifkan Kamera" untuk mencoba lagi.'
+          );
+          setCameraInitializing(false);
+          setDebugInfo((prev) => ({ ...prev, lastError: playErr.message }));
+          return;
+        }
       }
       console.log('Kamera aktif');
+      setCameraInitializing(false);
     } catch (error) {
       console.error('Camera error:', error);
       setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.');
       setCameraActive(false);
+      setCameraInitializing(false);
+      setDebugInfo((prev) => ({ ...prev, lastError: error.message }));
     }
-  }, []);
+  }, [stopCameraTracks]);
 
-  useEffect(() => {
-    initCamera();
-    return () => {
-      stopCameraTracks();
-      if (videoRef.current) videoRef.current.srcObject = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Perbaikan: pengecekan cameraReady yang lebih robust
+  // ==================== 6. DETEKSI CAMERA READY ====================
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !cameraActive) return;
@@ -171,12 +207,19 @@ export default function FaceRecognitionPage({
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         console.log('Camera ready (checkReady)');
         setCameraReady(true);
+        setDebugInfo((prev) => ({
+          ...prev,
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+        }));
         return true;
       }
       return false;
     };
 
     const handleCanPlay = () => {
+      console.log('Event canplay terpicu');
+      setDebugInfo((prev) => ({ ...prev, canPlayFired: true }));
       if (checkReady()) {
         video.removeEventListener('canplay', handleCanPlay);
       }
@@ -187,38 +230,38 @@ export default function FaceRecognitionPage({
     // Cek langsung jika sudah siap
     if (checkReady()) {
       video.removeEventListener('canplay', handleCanPlay);
-    } else {
-      // Interval pengecekan tambahan
-      const interval = setInterval(() => {
-        if (checkReady()) {
-          clearInterval(interval);
-          video.removeEventListener('canplay', handleCanPlay);
-        }
-      }, 200);
+      return;
+    }
 
-      // Timeout untuk memberi tahu gagal
-      const timeout = setTimeout(() => {
-        clearInterval(interval);
-        if (!video.videoWidth || video.videoWidth === 0) {
-          setCameraError('Kamera tidak merespons, coba refresh halaman.');
-        }
-      }, 5000);
-
-      return () => {
-        clearTimeout(timeout);
+    const interval = setInterval(() => {
+      if (checkReady()) {
         clearInterval(interval);
         video.removeEventListener('canplay', handleCanPlay);
-      };
-    }
+      }
+    }, 200);
+
+    // Timeout lebih panjang (10 detik)
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      if (!video.videoWidth || video.videoWidth === 0) {
+        setCameraError(
+          'Kamera tidak merespons. Coba klik tombol "Aktifkan Kamera" untuk memulai ulang.'
+        );
+        setDebugInfo((prev) => ({
+          ...prev,
+          lastError: 'Timeout menunggu video ready',
+        }));
+      }
+    }, 10000);
+
+    return () => {
+      clearTimeout(timeout);
+      clearInterval(interval);
+      video.removeEventListener('canplay', handleCanPlay);
+    };
   }, [cameraActive]);
 
-  const stopCameraTracks = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-  }, []);
-
+  // ==================== 7. CLEANUP KAMERA ====================
   const cleanupCamera = useCallback(() => {
     stopCameraTracks();
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -226,12 +269,13 @@ export default function FaceRecognitionPage({
     setCameraReady(false);
   }, [stopCameraTracks]);
 
-  // ===== Fungsi capture =====
+  // ==================== 8. CAPTURE FOTO ====================
   const capturePhoto = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) throw new Error('Camera not ready');
-    if (!cameraReady || video.videoWidth === 0) throw new Error('Camera masih memuat, tunggu sebentar');
+    if (!cameraReady || video.videoWidth === 0)
+      throw new Error('Camera masih memuat, tunggu sebentar');
 
     const videoWidth = video.videoWidth;
     const videoHeight = video.videoHeight;
@@ -246,7 +290,17 @@ export default function FaceRecognitionPage({
     canvas.width = actualCropWidth;
     canvas.height = actualCropHeight;
     const context = canvas.getContext('2d');
-    context.drawImage(video, startX, startY, actualCropWidth, actualCropHeight, 0, 0, actualCropWidth, actualCropHeight);
+    context.drawImage(
+      video,
+      startX,
+      startY,
+      actualCropWidth,
+      actualCropHeight,
+      0,
+      0,
+      actualCropWidth,
+      actualCropHeight
+    );
     return canvas.toDataURL('image/jpeg', 0.92);
   }, [cameraReady]);
 
@@ -260,17 +314,20 @@ export default function FaceRecognitionPage({
         } catch (err) {
           console.warn(`Frame ${i} gagal:`, err.message);
         }
-        if (i < frameCount - 1) await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        if (i < frameCount - 1)
+          await new Promise((resolve) => setTimeout(resolve, intervalMs));
       }
       if (frames.length < 8) {
-        throw new Error('Hanya berhasil mengambil ' + frames.length + ' frame (minimal 8 dibutuhkan)');
+        throw new Error(
+          'Hanya berhasil mengambil ' + frames.length + ' frame (minimal 8 dibutuhkan)'
+        );
       }
       return frames;
     },
     [capturePhoto]
   );
 
-  // ===== GPS =====
+  // ==================== 9. GPS ====================
   const getLocationSamples = useCallback(
     (sampleCount = 8, intervalMs = 700) => {
       return new Promise((resolve, reject) => {
@@ -283,7 +340,11 @@ export default function FaceRecognitionPage({
           if (samples.length >= 3) {
             resolve(samples);
           } else {
-            reject(new Error('Timeout mengambil GPS, hanya ' + samples.length + ' sampel terkumpul'));
+            reject(
+              new Error(
+                'Timeout mengambil GPS, hanya ' + samples.length + ' sampel terkumpul'
+              )
+            );
           }
         }, 10000);
 
@@ -330,7 +391,7 @@ export default function FaceRecognitionPage({
     []
   );
 
-  // ===== Kirim absensi =====
+  // ==================== 10. KIRIM ABSENSI ====================
   const takeAttendance = useCallback(
     async (framesDataUrls, lat, lon, accuracy, samples) => {
       const formData = new FormData();
@@ -367,7 +428,7 @@ export default function FaceRecognitionPage({
     [userName, selectedCourse]
   );
 
-  // ===== Proses utama absensi =====
+  // ==================== 11. PROSES UTAMA ABSENSI ====================
   const processAttendance = useCallback(async () => {
     const steps = [
       { label: 'Mengambil sampel GPS', status: 'pending' },
@@ -444,10 +505,10 @@ export default function FaceRecognitionPage({
     selectedCourse,
   ]);
 
-  // ===== Handler Start Scan =====
+  // ==================== 12. HANDLER START SCAN ====================
   const handleStartScan = useCallback(() => {
     if (!cameraReady) {
-      setCameraError('Kamera belum siap, tunggu sebentar...');
+      setCameraError('Kamera belum siap, klik "Aktifkan Kamera" terlebih dahulu.');
       return;
     }
     if (attendanceStatus[selectedCourse]) {
@@ -475,9 +536,16 @@ export default function FaceRecognitionPage({
     }
 
     setShowLiveness(true);
-  }, [cameraReady, attendanceStatus, selectedCourse, activeMeeting, livenessCompleted, processAttendance]);
+  }, [
+    cameraReady,
+    attendanceStatus,
+    selectedCourse,
+    activeMeeting,
+    livenessCompleted,
+    processAttendance,
+  ]);
 
-  // ===== Handler Liveness =====
+  // ==================== 13. HANDLER LIVENESS ====================
   const handleLivenessSuccess = useCallback(async () => {
     setShowLiveness(false);
     setLivenessCompleted(true);
@@ -488,7 +556,7 @@ export default function FaceRecognitionPage({
     setShowLiveness(false);
   }, []);
 
-  // ===== Handler modal =====
+  // ==================== 14. HANDLER MODAL ====================
   const handleCloseModal = useCallback(() => {
     setShowResultModal(false);
     if (scanResult?.success) {
@@ -508,7 +576,7 @@ export default function FaceRecognitionPage({
     onNavigate('mahasiswa-dashboard');
   }, [cleanupCamera, onNavigate]);
 
-  // ===== Render =====
+  // ==================== 15. RENDER ====================
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
@@ -569,6 +637,7 @@ export default function FaceRecognitionPage({
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
           <div className="p-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* ===== KOLOM KIRI (Video & Kontrol) ===== */}
               <div className="lg:col-span-2 space-y-4">
                 {attendanceStatus[selectedCourse] && (
                   <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-3 text-sm">
@@ -603,8 +672,9 @@ export default function FaceRecognitionPage({
                   </div>
                 )}
 
+                {/* VIDEO */}
                 <div className="relative bg-gray-900 rounded-xl overflow-hidden aspect-video shadow-inner">
-                  {cameraError ? (
+                  {cameraError && !cameraActive ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
                       <svg
                         className="w-12 h-12 text-gray-500 mb-3"
@@ -643,7 +713,13 @@ export default function FaceRecognitionPage({
                             d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
                           />
                         </svg>
-                        <p className="text-gray-400 text-sm">Menghidupkan kamera...</p>
+                        <p className="text-gray-400 text-sm">Kamera dimatikan</p>
+                        <button
+                          onClick={initCamera}
+                          className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
+                        >
+                          Aktifkan Kamera
+                        </button>
                       </div>
                     </div>
                   ) : (
@@ -672,6 +748,7 @@ export default function FaceRecognitionPage({
                   )}
                 </div>
 
+                {/* KONTROL */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-medium text-gray-700 mb-1">Pilih Mata Kuliah</label>
@@ -722,7 +799,7 @@ export default function FaceRecognitionPage({
                       {isScanning
                         ? 'Memproses...'
                         : !cameraActive
-                        ? 'Memuat Kamera...'
+                        ? 'Kamera Mati'
                         : !cameraReady
                         ? 'Kamera Belum Siap'
                         : attendanceStatus[selectedCourse]
@@ -736,6 +813,19 @@ export default function FaceRecognitionPage({
                   </div>
                 </div>
 
+                {/* TOMBOL AKTIFKAN KAMERA (muncul jika kamera belum siap atau error) */}
+                {(!cameraReady || cameraError) && !isScanning && (
+                  <button
+                    onClick={() => {
+                      cleanupCamera(); // bersihkan stream lama
+                      initCamera();    // coba lagi
+                    }}
+                    className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm transition"
+                  >
+                    {cameraInitializing ? 'Mengaktifkan...' : '🔄 Aktifkan Kamera'}
+                  </button>
+                )}
+
                 <button
                   onClick={handleCancel}
                   className="w-full border border-gray-300 text-gray-700 font-medium py-2 rounded-lg text-sm hover:bg-gray-50 transition"
@@ -744,6 +834,7 @@ export default function FaceRecognitionPage({
                 </button>
               </div>
 
+              {/* ===== KOLOM KANAN (Info & Debug) ===== */}
               <div className="space-y-4">
                 {progressSteps.length > 0 && (
                   <div className="mb-4 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
@@ -834,12 +925,28 @@ export default function FaceRecognitionPage({
                     <li>Ikuti instruksi liveness</li>
                   </ul>
                 </div>
+
+                {/* ===== PANEL DEBUG (tampil di frontend) ===== */}
+                <div className="bg-gray-100 border border-gray-300 rounded-xl p-3 text-xs text-gray-700">
+                  <p className="font-semibold text-gray-600 mb-1">🔧 Debug Info</p>
+                  <div className="space-y-0.5">
+                    <p>Camera Active: <span className="font-mono">{String(cameraActive)}</span></p>
+                    <p>Camera Ready: <span className="font-mono">{String(cameraReady)}</span></p>
+                    <p>Initializing: <span className="font-mono">{String(cameraInitializing)}</span></p>
+                    <p>Video WxH: <span className="font-mono">{debugInfo.videoWidth} x {debugInfo.videoHeight}</span></p>
+                    <p>canplay fired: <span className="font-mono">{String(debugInfo.canPlayFired)}</span></p>
+                    <p>Init attempts: <span className="font-mono">{debugInfo.cameraInitAttempts}</span></p>
+                    <p>Last error: <span className="font-mono text-red-600">{debugInfo.lastError || 'none'}</span></p>
+                    <p>Stream active: <span className="font-mono">{streamRef.current ? 'yes' : 'no'}</span></p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </main>
 
+      {/* ===== LIVENESS CHALLENGE ===== */}
       {showLiveness && (
         <LivenessChallenge
           userId={userId}
@@ -850,6 +957,7 @@ export default function FaceRecognitionPage({
 
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
+      {/* ===== MODAL HASIL ===== */}
       {showResultModal && scanResult && (
         <Modal isOpen={true} onClose={handleCloseModal}>
           <div className="w-full max-w-md text-center">
