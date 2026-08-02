@@ -35,11 +35,16 @@ export default function FaceRecognitionPage({
   // Data mata kuliah
   const [courses, setCourses] = useState([]);
   const [coursesLoading, setCoursesLoading] = useState(true);
+  const [coursesError, setCoursesError] = useState(null);
   const [selectedCourse, setSelectedCourse] = useState('');
 
   // Meeting aktif
   const [activeMeeting, setActiveMeeting] = useState(null);
   const [activeMeetingLoading, setActiveMeetingLoading] = useState(false);
+  const [activeMeetingError, setActiveMeetingError] = useState(null);
+
+  // Debug info (bisa dihapus setelah masalah teratasi)
+  const [debugInfo, setDebugInfo] = useState({});
 
   // ===== Fungsi updateProgress =====
   const updateProgress = useCallback((stepIndex, status, label) => {
@@ -58,15 +63,18 @@ export default function FaceRecognitionPage({
   useEffect(() => {
     const fetchCourses = async () => {
       setCoursesLoading(true);
+      setCoursesError(null);
       try {
-        const res = await fetch(
-          `${FASTAPI_API_URL}/api/courses/mahasiswa?name=${encodeURIComponent(userName)}`
-        );
+        const url = `${FASTAPI_API_URL}/api/courses/mahasiswa?name=${encodeURIComponent(userName)}`;
+        console.log('Fetch courses from:', url);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setCourses(data);
         if (data.length > 0) setSelectedCourse(data[0].kode_mk);
       } catch (err) {
-        console.error('Gagal mengambil mata kuliah', err);
+        console.error('Gagal mengambil mata kuliah:', err);
+        setCoursesError(err.message);
       } finally {
         setCoursesLoading(false);
       }
@@ -80,10 +88,20 @@ export default function FaceRecognitionPage({
       const course = courses.find((c) => c.kode_mk === selectedCourse);
       if (course && course.id) {
         setActiveMeetingLoading(true);
-        apiFetch(`${EXPRESS_API_URL}/meetings/active/${course.id}`)
-          .then((res) => (res.ok ? res.json() : null))
+        setActiveMeetingError(null);
+        const url = `${EXPRESS_API_URL}/meetings/active/${course.id}`;
+        console.log('Fetch active meeting from:', url);
+        apiFetch(url)
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+          })
           .then((data) => setActiveMeeting(data))
-          .catch(() => setActiveMeeting(null))
+          .catch((err) => {
+            console.error('Gagal ambil meeting aktif:', err);
+            setActiveMeetingError(err.message);
+            setActiveMeeting(null);
+          })
           .finally(() => setActiveMeetingLoading(false));
       } else {
         setActiveMeeting(null);
@@ -95,11 +113,12 @@ export default function FaceRecognitionPage({
   const checkAttendanceStatus = useCallback(
     async (courseKode) => {
       try {
-        const res = await fetch(
-          `${FASTAPI_API_URL}/api/attendance-status?name=${encodeURIComponent(
-            userName
-          )}&course_kode=${encodeURIComponent(courseKode)}`
-        );
+        const url = `${FASTAPI_API_URL}/api/attendance-status?name=${encodeURIComponent(
+          userName
+        )}&course_kode=${encodeURIComponent(courseKode)}`;
+        console.log('Check attendance status:', url);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setAttendanceStatus((prev) => ({ ...prev, [courseKode]: data.hasAttended }));
       } catch (err) {
@@ -125,6 +144,7 @@ export default function FaceRecognitionPage({
     setCameraError('');
     setCameraReady(false);
     try {
+      console.log('Meminta akses kamera...');
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
       setCameraActive(true);
@@ -132,6 +152,7 @@ export default function FaceRecognitionPage({
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch((err) => console.error('Error playing video:', err));
       }
+      console.log('Kamera aktif');
     } catch (error) {
       console.error('Camera error:', error);
       setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.');
@@ -152,12 +173,19 @@ export default function FaceRecognitionPage({
     const video = videoRef.current;
     if (!video || !cameraActive) return;
     const handleCanPlay = () => {
-      if (video.videoWidth > 0 && video.videoHeight > 0) setCameraReady(true);
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        console.log('Camera ready (canplay)');
+        setCameraReady(true);
+      }
     };
     video.addEventListener('canplay', handleCanPlay);
     const timeout = setTimeout(() => {
-      if (video.videoWidth > 0 && video.videoHeight > 0) setCameraReady(true);
-      else if (cameraActive) setCameraError('Kamera tidak merespons, coba refresh halaman.');
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        console.log('Camera ready (timeout)');
+        setCameraReady(true);
+      } else if (cameraActive) {
+        setCameraError('Kamera tidak merespons, coba refresh halaman.');
+      }
     }, 2000);
     return () => {
       video.removeEventListener('canplay', handleCanPlay);
@@ -299,7 +327,9 @@ export default function FaceRecognitionPage({
         formData.append('files', blob, `frame${i}.jpg`);
       }
 
-      const response = await fetch(`${FASTAPI_API_URL}/api/attendance`, {
+      const url = `${FASTAPI_API_URL}/api/attendance`;
+      console.log('Post attendance to:', url);
+      const response = await fetch(url, {
         method: 'POST',
         body: formData,
       });
@@ -421,13 +451,11 @@ export default function FaceRecognitionPage({
       return;
     }
 
-    // Jika liveness sudah pernah berhasil, langsung ke proses absensi
     if (livenessCompleted) {
       processAttendance();
       return;
     }
 
-    // Tampilkan Liveness Challenge
     setShowLiveness(true);
   }, [cameraReady, attendanceStatus, selectedCourse, activeMeeting, livenessCompleted, processAttendance]);
 
@@ -462,7 +490,38 @@ export default function FaceRecognitionPage({
     onNavigate('mahasiswa-dashboard');
   }, [cleanupCamera, onNavigate]);
 
-  // ===== Render (sama seperti sebelumnya) =====
+  // ===== Debug: tampilkan state di console =====
+  useEffect(() => {
+    setDebugInfo({
+      cameraActive,
+      cameraReady,
+      cameraError,
+      coursesLength: courses.length,
+      coursesLoading,
+      coursesError,
+      selectedCourse,
+      activeMeeting: !!activeMeeting,
+      activeMeetingLoading,
+      activeMeetingError,
+      attendanceStatus: attendanceStatus[selectedCourse],
+      isScanning,
+    });
+  }, [
+    cameraActive,
+    cameraReady,
+    cameraError,
+    courses,
+    coursesLoading,
+    coursesError,
+    selectedCourse,
+    activeMeeting,
+    activeMeetingLoading,
+    activeMeetingError,
+    attendanceStatus,
+    isScanning,
+  ]);
+
+  // ===== Render =====
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
@@ -546,7 +605,14 @@ export default function FaceRecognitionPage({
                 )}
                 {!activeMeetingLoading && !activeMeeting && selectedCourse && !attendanceStatus[selectedCourse] && (
                   <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm">
-                    <p className="text-orange-700">Belum ada sesi absensi aktif untuk mata kuliah ini.</p>
+                    <p className="text-orange-700">
+                      {activeMeetingError ? `Error: ${activeMeetingError}` : 'Belum ada sesi absensi aktif untuk mata kuliah ini.'}
+                    </p>
+                  </div>
+                )}
+                {coursesError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
+                    <p className="text-red-700">Error mengambil data mata kuliah: {coursesError}</p>
                   </div>
                 )}
 
@@ -650,7 +716,8 @@ export default function FaceRecognitionPage({
                         attendanceStatus[selectedCourse] ||
                         !activeMeeting ||
                         courses.length === 0 ||
-                        coursesLoading
+                        coursesLoading ||
+                        !!coursesError
                       }
                       className={`w-full font-semibold py-2.5 rounded-lg transition text-sm ${
                         isScanning ||
@@ -659,7 +726,8 @@ export default function FaceRecognitionPage({
                         attendanceStatus[selectedCourse] ||
                         !activeMeeting ||
                         courses.length === 0 ||
-                        coursesLoading
+                        coursesLoading ||
+                        !!coursesError
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                           : 'bg-teal-600 hover:bg-teal-700 text-white'
                       }`}
@@ -674,6 +742,8 @@ export default function FaceRecognitionPage({
                         ? 'Sudah Absen'
                         : !activeMeeting
                         ? 'Tidak Ada Sesi'
+                        : coursesError
+                        ? 'Error Data'
                         : 'Mulai Scan'}
                     </button>
                   </div>
@@ -776,6 +846,14 @@ export default function FaceRecognitionPage({
                     <li>Posisi kepala <span className="font-medium">lurus</span></li>
                     <li>Ikuti instruksi liveness</li>
                   </ul>
+                </div>
+
+                {/* Debug Panel (untuk sementara) */}
+                <div className="bg-gray-100 border border-gray-300 rounded-xl p-3 text-xs text-gray-700">
+                  <p className="font-semibold">Debug Info:</p>
+                  <pre className="whitespace-pre-wrap">
+                    {JSON.stringify(debugInfo, null, 2)}
+                  </pre>
                 </div>
               </div>
             </div>
