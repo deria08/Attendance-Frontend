@@ -68,7 +68,7 @@ useEffect(() => {
 
 const fetchProfile = async () => {
   try {
-    const res = await apiFetch(`${EXPRESS_API_URL}/profile`);
+    const res = await apiFetch(`${EXPRESS_API_URL}/auth/profile`);
     if (res.ok) {
       const user = await res.json();
       setUserData(user);
