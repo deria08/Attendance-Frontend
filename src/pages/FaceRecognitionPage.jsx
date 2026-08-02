@@ -11,7 +11,7 @@ export default function FaceRecognitionPage({
   userName,
   userId,
 }) {
-  // ==================== STATE KAMERA ====================
+  // State kamera
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState('');
@@ -20,42 +20,37 @@ export default function FaceRecognitionPage({
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
-  // ==================== STATE LIVENESS ====================
+  // State liveness
   const [showLiveness, setShowLiveness] = useState(false);
   const [livenessCompleted, setLivenessCompleted] = useState(false);
 
-  // ==================== STATE PROSES SCAN ====================
+  // State proses scan
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [showResultModal, setShowResultModal] = useState(false);
   const [progressSteps, setProgressSteps] = useState([]);
 
-  // ==================== STATUS ABSENSI ====================
+  // Status absensi
   const [attendanceStatus, setAttendanceStatus] = useState({});
 
-  // ==================== DATA MATA KULIAH ====================
+  // Data mata kuliah
   const [courses, setCourses] = useState([]);
   const [coursesLoading, setCoursesLoading] = useState(true);
   const [coursesError, setCoursesError] = useState(null);
   const [selectedCourse, setSelectedCourse] = useState('');
 
-  // ==================== MEETING AKTIF ====================
+  // Meeting aktif
   const [activeMeeting, setActiveMeeting] = useState(null);
   const [activeMeetingLoading, setActiveMeetingLoading] = useState(false);
   const [activeMeetingError, setActiveMeetingError] = useState(null);
 
-  // ==================== DEBUG INFO ====================
+  // Debug info (opsional, bisa dihapus)
   const [debugInfo, setDebugInfo] = useState({
-    cameraInitAttempts: 0,
+    initAttempts: 0,
     lastError: null,
-    videoWidth: 0,
-    videoHeight: 0,
-    canPlayFired: false,
-    loadedMetadataFired: false,
-    playingFired: false,
   });
 
-  // ==================== FUNGSI UPDATE PROGRESS ====================
+  // ===== Fungsi updateProgress =====
   const updateProgress = useCallback((stepIndex, status, label) => {
     setProgressSteps((prev) => {
       const newSteps = [...prev];
@@ -68,7 +63,7 @@ export default function FaceRecognitionPage({
     });
   }, []);
 
-  // ==================== 1. AMBIL DAFTAR COURSE ====================
+  // ===== 1. Ambil daftar course =====
   useEffect(() => {
     const fetchCourses = async () => {
       setCoursesLoading(true);
@@ -90,7 +85,7 @@ export default function FaceRecognitionPage({
     fetchCourses();
   }, [userName]);
 
-  // ==================== 2. CEK MEETING AKTIF ====================
+  // ===== 2. Cek meeting aktif =====
   useEffect(() => {
     if (selectedCourse && courses.length) {
       const course = courses.find((c) => c.kode_mk === selectedCourse);
@@ -115,7 +110,7 @@ export default function FaceRecognitionPage({
     }
   }, [selectedCourse, courses]);
 
-  // ==================== 3. CEK STATUS ABSENSI ====================
+  // ===== 3. Cek status absensi =====
   const checkAttendanceStatus = useCallback(
     async (courseKode) => {
       try {
@@ -137,14 +132,14 @@ export default function FaceRecognitionPage({
     if (selectedCourse) checkAttendanceStatus(selectedCourse);
   }, [selectedCourse, checkAttendanceStatus]);
 
-  // ==================== 4. DEFAULT COURSE ====================
+  // ===== 4. Default course =====
   useEffect(() => {
     if (courses.length > 0 && !selectedCourse) {
       setSelectedCourse(courses[0].kode_mk);
     }
   }, [courses, selectedCourse]);
 
-  // ==================== 5. KAMERA - INISIALISASI ====================
+  // ===== 5. Fungsi kamera =====
   const stopCameraTracks = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -152,24 +147,14 @@ export default function FaceRecognitionPage({
     }
   }, []);
 
+  // Inisialisasi kamera: minta izin, set stream, dan coba play
   const initCamera = useCallback(async () => {
-    // Reset state
     setCameraError('');
     setCameraReady(false);
     setCameraInitializing(true);
-    setDebugInfo((prev) => ({
-      ...prev,
-      cameraInitAttempts: prev.cameraInitAttempts + 1,
-      lastError: null,
-      videoWidth: 0,
-      videoHeight: 0,
-      canPlayFired: false,
-      loadedMetadataFired: false,
-      playingFired: false,
-    }));
+    setDebugInfo(prev => ({ ...prev, initAttempts: prev.initAttempts + 1, lastError: null }));
 
     try {
-      console.log('Meminta akses kamera...');
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
       setCameraActive(true);
@@ -179,119 +164,87 @@ export default function FaceRecognitionPage({
         throw new Error('Video element tidak ditemukan');
       }
 
-      // Set stream ke video
       video.srcObject = stream;
-      video.muted = true; // Penting untuk autoplay
+      video.muted = true;
 
       // Coba play
       try {
         await video.play();
         console.log('Video play berhasil');
-        // Jika play berhasil, kita tunggu event untuk ready
+        // Jika play berhasil, cameraReady akan di-set oleh event listener
       } catch (playErr) {
-        console.error('Error playing video:', playErr);
-        // Jika gagal karena autoplay policy, kita tetap set error tapi biarkan stream aktif
-        // User bisa klik tombol "Aktifkan Kamera" lagi untuk mencoba play ulang
-        setCameraError('Autoplay diblokir. Klik tombol "Aktifkan Kamera" lagi untuk memutar video.');
-        setDebugInfo((prev) => ({ ...prev, lastError: playErr.message }));
+        console.warn('Autoplay diblokir, stream sudah siap. Klik tombol "Aktifkan Kamera" untuk memutar video.');
+        setCameraError('Kamera siap, tetapi autoplay diblokir. Klik tombol "Aktifkan Kamera" untuk memutar video.');
         setCameraInitializing(false);
-        // Jangan set cameraActive false, biarkan stream tetap ada agar user bisa coba play ulang
+        // Jangan matikan cameraActive, biarkan stream hidup
         return;
       }
-
       setCameraInitializing(false);
-    } catch (error) {
-      console.error('Camera error:', error);
-      setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.');
+    } catch (err) {
+      console.error('Gagal akses kamera:', err);
+      setCameraError('Tidak dapat mengakses kamera. Pastikan izin diberikan.');
       setCameraActive(false);
       setCameraInitializing(false);
-      setDebugInfo((prev) => ({ ...prev, lastError: error.message }));
+      setDebugInfo(prev => ({ ...prev, lastError: err.message }));
     }
   }, []);
 
-  // ==================== 6. DETEKSI CAMERA READY ====================
+  // Fungsi untuk memutar video (dipanggil dari tombol)
+  const playVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.paused) {
+      video.play()
+        .then(() => {
+          console.log('Video play berhasil dari tombol');
+          setCameraError('');
+        })
+        .catch(err => {
+          console.error('Gagal play video:', err);
+          setCameraError('Gagal memutar video. Coba klik lagi.');
+          setDebugInfo(prev => ({ ...prev, lastError: err.message }));
+        });
+    } else {
+      // Jika video sudah berjalan, set ready jika belum
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        setCameraReady(true);
+        setCameraError('');
+      }
+    }
+  }, []);
+
+  // ===== 6. Deteksi camera ready =====
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !cameraActive) {
-      // Jika kamera tidak aktif, reset ready
-      if (cameraReady) setCameraReady(false);
-      return;
-    }
+    if (!video) return;
 
-    // Fungsi untuk menandai ready
-    const markReady = () => {
+    const handleReady = () => {
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         console.log('Camera ready!', video.videoWidth, video.videoHeight);
         setCameraReady(true);
-        setCameraError(''); // hilangkan error jika ada
-        setDebugInfo((prev) => ({
-          ...prev,
-          videoWidth: video.videoWidth,
-          videoHeight: video.videoHeight,
-        }));
-        return true;
+        setCameraError('');
       }
-      return false;
     };
 
-    // Event handlers
-    const handleCanPlay = () => {
-      console.log('Event: canplay');
-      setDebugInfo((prev) => ({ ...prev, canPlayFired: true }));
-      markReady();
-    };
-
-    const handleLoadedMetadata = () => {
-      console.log('Event: loadedmetadata');
-      setDebugInfo((prev) => ({ ...prev, loadedMetadataFired: true }));
-      markReady();
-    };
-
-    const handlePlaying = () => {
-      console.log('Event: playing');
-      setDebugInfo((prev) => ({ ...prev, playingFired: true }));
-      markReady();
-    };
-
-    // Pasang listener
-    video.addEventListener('canplay', handleCanPlay);
-    video.addEventListener('loadedmetadata', handleLoadedMetadata);
-    video.addEventListener('playing', handlePlaying);
+    // Pasang event listener
+    video.addEventListener('loadedmetadata', handleReady);
+    video.addEventListener('playing', handleReady);
+    video.addEventListener('canplay', handleReady);
 
     // Cek langsung
-    if (markReady()) {
-      // Jika sudah siap, kita bisa hapus listener (tapi tidak perlu)
+    if (video.videoWidth > 0) {
+      handleReady();
     }
 
-    // Interval fallback
-    const interval = setInterval(() => {
-      if (markReady()) {
-        // Jika sudah ready, kita bisa berhenti interval, tapi tetap biarkan
-      }
-    }, 200);
-
-    // Timeout (15 detik)
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      if (!cameraReady) {
-        setCameraError('Kamera tidak siap setelah 15 detik. Coba klik "Aktifkan Kamera" lagi.');
-        setDebugInfo((prev) => ({
-          ...prev,
-          lastError: 'Timeout menunggu video ready',
-        }));
-      }
-    }, 15000);
-
     return () => {
-      clearTimeout(timeout);
-      clearInterval(interval);
-      video.removeEventListener('canplay', handleCanPlay);
-      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('loadedmetadata', handleReady);
+      video.removeEventListener('playing', handleReady);
+      video.removeEventListener('canplay', handleReady);
     };
-  }, [cameraActive, cameraReady]);
+  }, []);
 
-  // ==================== 7. CLEANUP KAMERA ====================
+  // ===== 7. Cleanup =====
   const cleanupCamera = useCallback(() => {
     stopCameraTracks();
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -299,13 +252,13 @@ export default function FaceRecognitionPage({
     setCameraReady(false);
   }, [stopCameraTracks]);
 
-  // ==================== 8. CAPTURE FOTO ====================
+  // ===== 8. Capture =====
   const capturePhoto = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) throw new Error('Camera not ready');
     if (!cameraReady || video.videoWidth === 0)
-      throw new Error('Camera masih memuat, tunggu sebentar');
+      throw new Error('Camera masih memuat');
 
     const videoWidth = video.videoWidth;
     const videoHeight = video.videoHeight;
@@ -320,17 +273,7 @@ export default function FaceRecognitionPage({
     canvas.width = actualCropWidth;
     canvas.height = actualCropHeight;
     const context = canvas.getContext('2d');
-    context.drawImage(
-      video,
-      startX,
-      startY,
-      actualCropWidth,
-      actualCropHeight,
-      0,
-      0,
-      actualCropWidth,
-      actualCropHeight
-    );
+    context.drawImage(video, startX, startY, actualCropWidth, actualCropHeight, 0, 0, actualCropWidth, actualCropHeight);
     return canvas.toDataURL('image/jpeg', 0.92);
   }, [cameraReady]);
 
@@ -344,20 +287,17 @@ export default function FaceRecognitionPage({
         } catch (err) {
           console.warn(`Frame ${i} gagal:`, err.message);
         }
-        if (i < frameCount - 1)
-          await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        if (i < frameCount - 1) await new Promise((resolve) => setTimeout(resolve, intervalMs));
       }
       if (frames.length < 8) {
-        throw new Error(
-          'Hanya berhasil mengambil ' + frames.length + ' frame (minimal 8 dibutuhkan)'
-        );
+        throw new Error('Hanya berhasil mengambil ' + frames.length + ' frame (minimal 8)');
       }
       return frames;
     },
     [capturePhoto]
   );
 
-  // ==================== 9. GPS ====================
+  // ===== 9. GPS =====
   const getLocationSamples = useCallback(
     (sampleCount = 8, intervalMs = 700) => {
       return new Promise((resolve, reject) => {
@@ -370,11 +310,7 @@ export default function FaceRecognitionPage({
           if (samples.length >= 3) {
             resolve(samples);
           } else {
-            reject(
-              new Error(
-                'Timeout mengambil GPS, hanya ' + samples.length + ' sampel terkumpul'
-              )
-            );
+            reject(new Error('Timeout GPS, hanya ' + samples.length + ' sampel'));
           }
         }, 10000);
 
@@ -421,7 +357,7 @@ export default function FaceRecognitionPage({
     []
   );
 
-  // ==================== 10. KIRIM ABSENSI ====================
+  // ===== 10. Kirim absensi =====
   const takeAttendance = useCallback(
     async (framesDataUrls, lat, lon, accuracy, samples) => {
       const formData = new FormData();
@@ -458,7 +394,7 @@ export default function FaceRecognitionPage({
     [userName, selectedCourse]
   );
 
-  // ==================== 11. PROSES UTAMA ABSENSI ====================
+  // ===== 11. Proses utama =====
   const processAttendance = useCallback(async () => {
     const steps = [
       { label: 'Mengambil sampel GPS', status: 'pending' },
@@ -474,10 +410,8 @@ export default function FaceRecognitionPage({
     try {
       updateProgress(0, 'active');
       const samples = await getLocationSamples(8, 700);
-      if (samples.length < 8) {
-        throw new Error('Gagal mengambil cukup sampel GPS (minimal 8)');
-      }
-      updateProgress(0, 'done', 'Mengambil sampel GPS ✓');
+      if (samples.length < 8) throw new Error('GPS tidak cukup');
+      updateProgress(0, 'done', 'GPS ✓');
       const avgLat = samples.reduce((sum, p) => sum + p.lat, 0) / samples.length;
       const avgLon = samples.reduce((sum, p) => sum + p.lon, 0) / samples.length;
       const avgAcc = samples.reduce((sum, p) => sum + p.accuracy, 0) / samples.length;
@@ -485,29 +419,28 @@ export default function FaceRecognitionPage({
       updateProgress(1, 'active');
       updateProgress(2, 'active');
       const frames = await captureMultipleFrames(10, 300);
-      updateProgress(2, 'done', 'Mengambil gambar wajah ✓');
+      updateProgress(2, 'done', 'Gambar wajah ✓');
 
       updateProgress(3, 'active');
       const result = await takeAttendance(frames, avgLat, avgLon, avgAcc, samples);
 
-      updateProgress(1, 'done', 'Memverifikasi lokasi ✓');
-      updateProgress(3, 'done', 'Mencocokkan wajah ✓');
+      updateProgress(1, 'done', 'Lokasi ✓');
+      updateProgress(3, 'done', 'Pencocokan ✓');
       updateProgress(4, 'active');
 
       setScanResult(result);
       setShowResultModal(true);
       if (result.success) {
         setAttendanceStatus((prev) => ({ ...prev, [selectedCourse]: true }));
-        updateProgress(4, 'done', 'Menyimpan absensi ✓');
+        updateProgress(4, 'done', 'Disimpan ✓');
       } else {
-        updateProgress(4, 'error', 'Menyimpan absensi gagal');
+        updateProgress(4, 'error', 'Gagal simpan');
       }
     } catch (error) {
-      console.error('Proses absensi error:', error);
-      let userMessage = error.message || 'Gagal melakukan scan wajah';
+      console.error('Error absensi:', error);
+      let userMessage = error.message || 'Gagal scan';
       if (userMessage.includes('Liveness detection gagal')) {
-        userMessage =
-          '❌ Liveness detection gagal.\n\nPastikan Anda:\n• Berkedip secara alami\n• Menggerakkan kepala sedikit (angguk/geleng)\n• Pencahayaan cukup\n• Wajah terlihat jelas\n\nSilakan coba lagi.';
+        userMessage = '❌ Liveness gagal. Pastikan berkedip, gerak kepala, pencahayaan cukup.';
       }
       setScanResult({
         success: false,
@@ -515,14 +448,10 @@ export default function FaceRecognitionPage({
         timestamp: new Date().toLocaleTimeString('id-ID'),
       });
       setShowResultModal(true);
-
       setProgressSteps((prev) =>
-        prev.map((step) => {
-          if (step.status === 'active') {
-            return { ...step, status: 'error', label: '❌ Gagal' };
-          }
-          return step;
-        })
+        prev.map((step) =>
+          step.status === 'active' ? { ...step, status: 'error', label: '❌ Gagal' } : step
+        )
       );
     } finally {
       setIsScanning(false);
@@ -535,16 +464,16 @@ export default function FaceRecognitionPage({
     selectedCourse,
   ]);
 
-  // ==================== 12. HANDLER START SCAN ====================
+  // ===== 12. Handler =====
   const handleStartScan = useCallback(() => {
     if (!cameraReady) {
-      setCameraError('Kamera belum siap, klik "Aktifkan Kamera" terlebih dahulu.');
+      setCameraError('Kamera belum siap. Klik "Aktifkan Kamera" lalu tunggu.');
       return;
     }
     if (attendanceStatus[selectedCourse]) {
       setScanResult({
         success: false,
-        message: 'Anda sudah melakukan absensi untuk pertemuan ini',
+        message: 'Anda sudah absen untuk pertemuan ini',
         timestamp: new Date().toLocaleTimeString('id-ID'),
       });
       setShowResultModal(true);
@@ -553,7 +482,7 @@ export default function FaceRecognitionPage({
     if (!activeMeeting) {
       setScanResult({
         success: false,
-        message: 'Belum ada sesi absensi yang dibuka oleh dosen untuk mata kuliah ini',
+        message: 'Belum ada sesi absensi aktif',
         timestamp: new Date().toLocaleTimeString('id-ID'),
       });
       setShowResultModal(true);
@@ -566,16 +495,8 @@ export default function FaceRecognitionPage({
     }
 
     setShowLiveness(true);
-  }, [
-    cameraReady,
-    attendanceStatus,
-    selectedCourse,
-    activeMeeting,
-    livenessCompleted,
-    processAttendance,
-  ]);
+  }, [cameraReady, attendanceStatus, selectedCourse, activeMeeting, livenessCompleted, processAttendance]);
 
-  // ==================== 13. HANDLER LIVENESS ====================
   const handleLivenessSuccess = useCallback(async () => {
     setShowLiveness(false);
     setLivenessCompleted(true);
@@ -586,7 +507,6 @@ export default function FaceRecognitionPage({
     setShowLiveness(false);
   }, []);
 
-  // ==================== 14. HANDLER MODAL ====================
   const handleCloseModal = useCallback(() => {
     setShowResultModal(false);
     if (scanResult?.success) {
@@ -606,7 +526,7 @@ export default function FaceRecognitionPage({
     onNavigate('mahasiswa-dashboard');
   }, [cleanupCamera, onNavigate]);
 
-  // ==================== 15. RENDER ====================
+  // ===== 13. Render =====
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b border-gray-200">
@@ -667,59 +587,33 @@ export default function FaceRecognitionPage({
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
           <div className="p-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* ===== KOLOM KIRI (Video & Kontrol) ===== */}
               <div className="lg:col-span-2 space-y-4">
                 {attendanceStatus[selectedCourse] && (
                   <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-3 text-sm">
-                    <svg
-                      className="w-5 h-5 text-yellow-600 flex-shrink-0"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                      />
+                    <svg className="w-5 h-5 text-yellow-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
-                    <p className="text-yellow-800 font-medium">
-                      Anda sudah absen Pertemuan ini untuk mata kuliah ini.
-                    </p>
+                    <p className="text-yellow-800 font-medium">Anda sudah absen untuk pertemuan ini.</p>
                   </div>
                 )}
                 {!activeMeetingLoading && !activeMeeting && selectedCourse && !attendanceStatus[selectedCourse] && (
                   <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm">
-                    <p className="text-orange-700">
-                      {activeMeetingError ? `Error: ${activeMeetingError}` : 'Belum ada sesi absensi aktif untuk mata kuliah ini.'}
-                    </p>
+                    <p className="text-orange-700">Belum ada sesi absensi aktif.</p>
                   </div>
                 )}
                 {coursesError && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
-                    <p className="text-red-700">Error mengambil data mata kuliah: {coursesError}</p>
+                    <p className="text-red-700">Error: {coursesError}</p>
                   </div>
                 )}
 
-                {/* VIDEO */}
                 <div className="relative bg-gray-900 rounded-xl overflow-hidden aspect-video shadow-inner">
-                  {!cameraActive && !cameraError ? (
+                  {!cameraActive ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
-                      <svg
-                        className="w-12 h-12 text-gray-500 mb-3"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
+                      <svg className="w-12 h-12 text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                       </svg>
-                      <p className="text-gray-400 text-sm">Kamera belum diaktifkan</p>
+                      <p className="text-gray-400 text-sm">Kamera belum aktif</p>
                       <button
                         onClick={initCamera}
                         className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
@@ -727,27 +621,17 @@ export default function FaceRecognitionPage({
                         Aktifkan Kamera
                       </button>
                     </div>
-                  ) : cameraError && !cameraActive ? (
+                  ) : cameraError && !cameraReady ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
-                      <svg
-                        className="w-12 h-12 text-red-500 mb-3"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                        />
+                      <svg className="w-12 h-12 text-yellow-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                       </svg>
                       <p className="text-gray-400 text-sm text-center mb-3">{cameraError}</p>
                       <button
-                        onClick={initCamera}
-                        className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm"
+                        onClick={playVideo}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
                       >
-                        Coba Aktifkan Kamera
+                        Putar Video
                       </button>
                     </div>
                   ) : (
@@ -770,20 +654,19 @@ export default function FaceRecognitionPage({
                             <div className="animate-spin rounded-full h-10 w-10 border-3 border-white border-t-transparent"></div>
                           </div>
                         </div>
-                        <p className="text-white font-semibold text-sm">Mencocokkan wajah...</p>
+                        <p className="text-white font-semibold text-sm">Memproses...</p>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* KONTROL */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-medium text-gray-700 mb-1">Pilih Mata Kuliah</label>
                     {coursesLoading ? (
-                      <p className="text-gray-500 text-sm">Memuat mata kuliah...</p>
+                      <p className="text-gray-500 text-sm">Memuat...</p>
                     ) : courses.length === 0 ? (
-                      <p className="text-red-600 text-sm">Belum terdaftar di mata kuliah apapun.</p>
+                      <p className="text-red-600 text-sm">Belum terdaftar.</p>
                     ) : (
                       <select
                         value={selectedCourse}
@@ -841,24 +724,19 @@ export default function FaceRecognitionPage({
                   </div>
                 </div>
 
-                {/* TOMBOL AKTIFKAN KAMERA (selalu tampil jika kamera belum ready atau ada error) */}
+                {/* Tombol Aktifkan/Putar Kamera */}
                 {(!cameraReady || cameraError) && !isScanning && (
                   <button
                     onClick={() => {
-                      // Jika sudah ada stream, coba play ulang tanpa meminta ulang izin
-                      if (streamRef.current && videoRef.current) {
-                        videoRef.current.play().catch(() => {
-                          // Jika play gagal, kita bisa coba init ulang
-                          cleanupCamera();
-                          initCamera();
-                        });
-                      } else {
+                      if (!cameraActive) {
                         initCamera();
+                      } else {
+                        playVideo();
                       }
                     }}
                     className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm transition"
                   >
-                    {cameraInitializing ? 'Mengaktifkan...' : '🔄 Aktifkan Kamera'}
+                    {cameraInitializing ? 'Mengaktifkan...' : cameraActive ? '▶️ Putar Video' : '📷 Aktifkan Kamera'}
                   </button>
                 )}
 
@@ -870,7 +748,6 @@ export default function FaceRecognitionPage({
                 </button>
               </div>
 
-              {/* ===== KOLOM KANAN (Info & Debug) ===== */}
               <div className="space-y-4">
                 {progressSteps.length > 0 && (
                   <div className="mb-4 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
@@ -916,26 +793,18 @@ export default function FaceRecognitionPage({
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                   <p className="text-blue-800 font-semibold text-sm flex items-center gap-1">
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fillRule="evenodd"
-                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                        clipRule="evenodd"
-                      />
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                     </svg>
-                    Instruksi Liveness
+                    Instruksi
                   </p>
-                  <p className="text-blue-700 text-base font-medium mt-1">Ikuti instruksi saat proses scan</p>
+                  <p className="text-blue-700 text-sm mt-1">Ikuti instruksi liveness saat scan</p>
                 </div>
 
                 {activeMeeting && (
                   <div className="bg-green-50 border border-green-200 rounded-xl p-4">
                     <p className="text-green-700 font-semibold text-sm flex items-center gap-1">
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fillRule="evenodd"
-                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
-                          clipRule="evenodd"
-                        />
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
                       </svg>
                       Sesi aktif
                     </p>
@@ -944,38 +813,24 @@ export default function FaceRecognitionPage({
                 )}
 
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                  <p className="text-gray-700 font-semibold text-sm mb-2 flex items-center gap-1">
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fillRule="evenodd"
-                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    Panduan
-                  </p>
+                  <p className="text-gray-700 font-semibold text-sm mb-2">Panduan</p>
                   <ul className="text-xs text-gray-600 space-y-1.5 list-disc list-inside">
-                    <li>Jarak optimal <span className="font-medium">30-60 cm</span></li>
-                    <li>Pencahayaan <span className="font-medium">cukup terang</span></li>
-                    <li>Posisi kepala <span className="font-medium">lurus</span></li>
+                    <li>Jarak 30-60 cm</li>
+                    <li>Pencahayaan cukup</li>
+                    <li>Posisi kepala lurus</li>
                     <li>Ikuti instruksi liveness</li>
                   </ul>
                 </div>
 
-                {/* ===== PANEL DEBUG ===== */}
+                {/* Debug panel (opsional) */}
                 <div className="bg-gray-100 border border-gray-300 rounded-xl p-3 text-xs text-gray-700">
-                  <p className="font-semibold text-gray-600 mb-1">🔧 Debug Info</p>
+                  <p className="font-semibold text-gray-600 mb-1">🔧 Debug</p>
                   <div className="space-y-0.5">
-                    <p>Camera Active: <span className="font-mono">{String(cameraActive)}</span></p>
-                    <p>Camera Ready: <span className="font-mono">{String(cameraReady)}</span></p>
-                    <p>Initializing: <span className="font-mono">{String(cameraInitializing)}</span></p>
-                    <p>Video WxH: <span className="font-mono">{debugInfo.videoWidth} x {debugInfo.videoHeight}</span></p>
-                    <p>canplay fired: <span className="font-mono">{String(debugInfo.canPlayFired)}</span></p>
-                    <p>loadedmetadata: <span className="font-mono">{String(debugInfo.loadedMetadataFired)}</span></p>
-                    <p>playing fired: <span className="font-mono">{String(debugInfo.playingFired)}</span></p>
-                    <p>Init attempts: <span className="font-mono">{debugInfo.cameraInitAttempts}</span></p>
-                    <p>Last error: <span className="font-mono text-red-600">{debugInfo.lastError || 'none'}</span></p>
-                    <p>Stream active: <span className="font-mono">{streamRef.current ? 'yes' : 'no'}</span></p>
+                    <p>Active: <span className="font-mono">{String(cameraActive)}</span></p>
+                    <p>Ready: <span className="font-mono">{String(cameraReady)}</span></p>
+                    <p>Error: <span className="font-mono text-red-600">{cameraError || 'none'}</span></p>
+                    <p>Init attempts: <span className="font-mono">{debugInfo.initAttempts}</span></p>
+                    <p>Stream: <span className="font-mono">{streamRef.current ? 'yes' : 'no'}</span></p>
                   </div>
                 </div>
               </div>
@@ -984,7 +839,6 @@ export default function FaceRecognitionPage({
         </div>
       </main>
 
-      {/* ===== LIVENESS CHALLENGE ===== */}
       {showLiveness && (
         <LivenessChallenge
           userId={userId}
@@ -995,7 +849,6 @@ export default function FaceRecognitionPage({
 
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-      {/* ===== MODAL HASIL ===== */}
       {showResultModal && scanResult && (
         <Modal isOpen={true} onClose={handleCloseModal}>
           <div className="w-full max-w-md text-center">
@@ -1003,11 +856,7 @@ export default function FaceRecognitionPage({
               <>
                 <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6">
                   <svg className="w-8 h-8 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Berhasil!</h2>
@@ -1018,11 +867,7 @@ export default function FaceRecognitionPage({
               <>
                 <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-6">
                   <svg className="w-8 h-8 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                      clipRule="evenodd"
-                    />
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Gagal!</h2>
