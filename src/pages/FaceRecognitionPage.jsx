@@ -43,9 +43,6 @@ export default function FaceRecognitionPage({
   const [activeMeetingLoading, setActiveMeetingLoading] = useState(false);
   const [activeMeetingError, setActiveMeetingError] = useState(null);
 
-  // Debug info (bisa dihapus setelah masalah teratasi)
-  const [debugInfo, setDebugInfo] = useState({});
-
   // ===== Fungsi updateProgress =====
   const updateProgress = useCallback((stepIndex, status, label) => {
     setProgressSteps((prev) => {
@@ -66,7 +63,6 @@ export default function FaceRecognitionPage({
       setCoursesError(null);
       try {
         const url = `${FASTAPI_API_URL}/api/courses/mahasiswa?name=${encodeURIComponent(userName)}`;
-        console.log('Fetch courses from:', url);
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -89,9 +85,7 @@ export default function FaceRecognitionPage({
       if (course && course.id) {
         setActiveMeetingLoading(true);
         setActiveMeetingError(null);
-        const url = `${EXPRESS_API_URL}/meetings/active/${course.id}`;
-        console.log('Fetch active meeting from:', url);
-        apiFetch(url)
+        apiFetch(`${EXPRESS_API_URL}/meetings/active/${course.id}`)
           .then((res) => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.json();
@@ -116,7 +110,6 @@ export default function FaceRecognitionPage({
         const url = `${FASTAPI_API_URL}/api/attendance-status?name=${encodeURIComponent(
           userName
         )}&course_kode=${encodeURIComponent(courseKode)}`;
-        console.log('Check attendance status:', url);
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -169,28 +162,54 @@ export default function FaceRecognitionPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Perbaikan: pengecekan cameraReady yang lebih robust
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !cameraActive) return;
+
+    const checkReady = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        console.log('Camera ready (checkReady)');
+        setCameraReady(true);
+        return true;
+      }
+      return false;
+    };
+
     const handleCanPlay = () => {
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        console.log('Camera ready (canplay)');
-        setCameraReady(true);
+      if (checkReady()) {
+        video.removeEventListener('canplay', handleCanPlay);
       }
     };
+
     video.addEventListener('canplay', handleCanPlay);
-    const timeout = setTimeout(() => {
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        console.log('Camera ready (timeout)');
-        setCameraReady(true);
-      } else if (cameraActive) {
-        setCameraError('Kamera tidak merespons, coba refresh halaman.');
-      }
-    }, 2000);
-    return () => {
+
+    // Cek langsung jika sudah siap
+    if (checkReady()) {
       video.removeEventListener('canplay', handleCanPlay);
-      clearTimeout(timeout);
-    };
+    } else {
+      // Interval pengecekan tambahan
+      const interval = setInterval(() => {
+        if (checkReady()) {
+          clearInterval(interval);
+          video.removeEventListener('canplay', handleCanPlay);
+        }
+      }, 200);
+
+      // Timeout untuk memberi tahu gagal
+      const timeout = setTimeout(() => {
+        clearInterval(interval);
+        if (!video.videoWidth || video.videoWidth === 0) {
+          setCameraError('Kamera tidak merespons, coba refresh halaman.');
+        }
+      }, 5000);
+
+      return () => {
+        clearTimeout(timeout);
+        clearInterval(interval);
+        video.removeEventListener('canplay', handleCanPlay);
+      };
+    }
   }, [cameraActive]);
 
   const stopCameraTracks = useCallback(() => {
@@ -328,7 +347,6 @@ export default function FaceRecognitionPage({
       }
 
       const url = `${FASTAPI_API_URL}/api/attendance`;
-      console.log('Post attendance to:', url);
       const response = await fetch(url, {
         method: 'POST',
         body: formData,
@@ -489,37 +507,6 @@ export default function FaceRecognitionPage({
     setLivenessCompleted(false);
     onNavigate('mahasiswa-dashboard');
   }, [cleanupCamera, onNavigate]);
-
-  // ===== Debug: tampilkan state di console =====
-  useEffect(() => {
-    setDebugInfo({
-      cameraActive,
-      cameraReady,
-      cameraError,
-      coursesLength: courses.length,
-      coursesLoading,
-      coursesError,
-      selectedCourse,
-      activeMeeting: !!activeMeeting,
-      activeMeetingLoading,
-      activeMeetingError,
-      attendanceStatus: attendanceStatus[selectedCourse],
-      isScanning,
-    });
-  }, [
-    cameraActive,
-    cameraReady,
-    cameraError,
-    courses,
-    coursesLoading,
-    coursesError,
-    selectedCourse,
-    activeMeeting,
-    activeMeetingLoading,
-    activeMeetingError,
-    attendanceStatus,
-    isScanning,
-  ]);
 
   // ===== Render =====
   return (
@@ -846,14 +833,6 @@ export default function FaceRecognitionPage({
                     <li>Posisi kepala <span className="font-medium">lurus</span></li>
                     <li>Ikuti instruksi liveness</li>
                   </ul>
-                </div>
-
-                {/* Debug Panel (untuk sementara) */}
-                <div className="bg-gray-100 border border-gray-300 rounded-xl p-3 text-xs text-gray-700">
-                  <p className="font-semibold">Debug Info:</p>
-                  <pre className="whitespace-pre-wrap">
-                    {JSON.stringify(debugInfo, null, 2)}
-                  </pre>
                 </div>
               </div>
             </div>
