@@ -44,13 +44,15 @@ export default function FaceRecognitionPage({
   const [activeMeetingLoading, setActiveMeetingLoading] = useState(false);
   const [activeMeetingError, setActiveMeetingError] = useState(null);
 
-  // ==================== DEBUG INFO (untuk tampil di UI) ====================
+  // ==================== DEBUG INFO ====================
   const [debugInfo, setDebugInfo] = useState({
     cameraInitAttempts: 0,
     lastError: null,
     videoWidth: 0,
     videoHeight: 0,
     canPlayFired: false,
+    loadedMetadataFired: false,
+    playingFired: false,
   });
 
   // ==================== FUNGSI UPDATE PROGRESS ====================
@@ -151,6 +153,7 @@ export default function FaceRecognitionPage({
   }, []);
 
   const initCamera = useCallback(async () => {
+    // Reset state
     setCameraError('');
     setCameraReady(false);
     setCameraInitializing(true);
@@ -161,6 +164,8 @@ export default function FaceRecognitionPage({
       videoWidth: 0,
       videoHeight: 0,
       canPlayFired: false,
+      loadedMetadataFired: false,
+      playingFired: false,
     }));
 
     try {
@@ -169,25 +174,31 @@ export default function FaceRecognitionPage({
       streamRef.current = stream;
       setCameraActive(true);
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        try {
-          await videoRef.current.play();
-          console.log('Video play berhasil');
-        } catch (playErr) {
-          console.error('Error playing video:', playErr);
-          // Jika play gagal (autoplay policy), hentikan stream dan beri error
-          stopCameraTracks();
-          setCameraActive(false);
-          setCameraError(
-            'Tidak dapat memutar video. Klik tombol "Aktifkan Kamera" untuk mencoba lagi.'
-          );
-          setCameraInitializing(false);
-          setDebugInfo((prev) => ({ ...prev, lastError: playErr.message }));
-          return;
-        }
+      const video = videoRef.current;
+      if (!video) {
+        throw new Error('Video element tidak ditemukan');
       }
-      console.log('Kamera aktif');
+
+      // Set stream ke video
+      video.srcObject = stream;
+      video.muted = true; // Penting untuk autoplay
+
+      // Coba play
+      try {
+        await video.play();
+        console.log('Video play berhasil');
+        // Jika play berhasil, kita tunggu event untuk ready
+      } catch (playErr) {
+        console.error('Error playing video:', playErr);
+        // Jika gagal karena autoplay policy, kita tetap set error tapi biarkan stream aktif
+        // User bisa klik tombol "Aktifkan Kamera" lagi untuk mencoba play ulang
+        setCameraError('Autoplay diblokir. Klik tombol "Aktifkan Kamera" lagi untuk memutar video.');
+        setDebugInfo((prev) => ({ ...prev, lastError: playErr.message }));
+        setCameraInitializing(false);
+        // Jangan set cameraActive false, biarkan stream tetap ada agar user bisa coba play ulang
+        return;
+      }
+
       setCameraInitializing(false);
     } catch (error) {
       console.error('Camera error:', error);
@@ -196,17 +207,23 @@ export default function FaceRecognitionPage({
       setCameraInitializing(false);
       setDebugInfo((prev) => ({ ...prev, lastError: error.message }));
     }
-  }, [stopCameraTracks]);
+  }, []);
 
   // ==================== 6. DETEKSI CAMERA READY ====================
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !cameraActive) return;
+    if (!video || !cameraActive) {
+      // Jika kamera tidak aktif, reset ready
+      if (cameraReady) setCameraReady(false);
+      return;
+    }
 
-    const checkReady = () => {
+    // Fungsi untuk menandai ready
+    const markReady = () => {
       if (video.videoWidth > 0 && video.videoHeight > 0) {
-        console.log('Camera ready (checkReady)');
+        console.log('Camera ready!', video.videoWidth, video.videoHeight);
         setCameraReady(true);
+        setCameraError(''); // hilangkan error jika ada
         setDebugInfo((prev) => ({
           ...prev,
           videoWidth: video.videoWidth,
@@ -217,49 +234,62 @@ export default function FaceRecognitionPage({
       return false;
     };
 
+    // Event handlers
     const handleCanPlay = () => {
-      console.log('Event canplay terpicu');
+      console.log('Event: canplay');
       setDebugInfo((prev) => ({ ...prev, canPlayFired: true }));
-      if (checkReady()) {
-        video.removeEventListener('canplay', handleCanPlay);
-      }
+      markReady();
     };
 
-    video.addEventListener('canplay', handleCanPlay);
+    const handleLoadedMetadata = () => {
+      console.log('Event: loadedmetadata');
+      setDebugInfo((prev) => ({ ...prev, loadedMetadataFired: true }));
+      markReady();
+    };
 
-    // Cek langsung jika sudah siap
-    if (checkReady()) {
-      video.removeEventListener('canplay', handleCanPlay);
-      return;
+    const handlePlaying = () => {
+      console.log('Event: playing');
+      setDebugInfo((prev) => ({ ...prev, playingFired: true }));
+      markReady();
+    };
+
+    // Pasang listener
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('playing', handlePlaying);
+
+    // Cek langsung
+    if (markReady()) {
+      // Jika sudah siap, kita bisa hapus listener (tapi tidak perlu)
     }
 
+    // Interval fallback
     const interval = setInterval(() => {
-      if (checkReady()) {
-        clearInterval(interval);
-        video.removeEventListener('canplay', handleCanPlay);
+      if (markReady()) {
+        // Jika sudah ready, kita bisa berhenti interval, tapi tetap biarkan
       }
     }, 200);
 
-    // Timeout lebih panjang (10 detik)
+    // Timeout (15 detik)
     const timeout = setTimeout(() => {
       clearInterval(interval);
-      if (!video.videoWidth || video.videoWidth === 0) {
-        setCameraError(
-          'Kamera tidak merespons. Coba klik tombol "Aktifkan Kamera" untuk memulai ulang.'
-        );
+      if (!cameraReady) {
+        setCameraError('Kamera tidak siap setelah 15 detik. Coba klik "Aktifkan Kamera" lagi.');
         setDebugInfo((prev) => ({
           ...prev,
           lastError: 'Timeout menunggu video ready',
         }));
       }
-    }, 10000);
+    }, 15000);
 
     return () => {
       clearTimeout(timeout);
       clearInterval(interval);
       video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('playing', handlePlaying);
     };
-  }, [cameraActive]);
+  }, [cameraActive, cameraReady]);
 
   // ==================== 7. CLEANUP KAMERA ====================
   const cleanupCamera = useCallback(() => {
@@ -674,10 +704,33 @@ export default function FaceRecognitionPage({
 
                 {/* VIDEO */}
                 <div className="relative bg-gray-900 rounded-xl overflow-hidden aspect-video shadow-inner">
-                  {cameraError && !cameraActive ? (
+                  {!cameraActive && !cameraError ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
                       <svg
                         className="w-12 h-12 text-gray-500 mb-3"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                      <p className="text-gray-400 text-sm">Kamera belum diaktifkan</p>
+                      <button
+                        onClick={initCamera}
+                        className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
+                      >
+                        Aktifkan Kamera
+                      </button>
+                    </div>
+                  ) : cameraError && !cameraActive ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
+                      <svg
+                        className="w-12 h-12 text-red-500 mb-3"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -696,31 +749,6 @@ export default function FaceRecognitionPage({
                       >
                         Coba Aktifkan Kamera
                       </button>
-                    </div>
-                  ) : !cameraActive ? (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-center">
-                        <svg
-                          className="w-12 h-12 text-gray-600 mx-auto mb-3"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                          />
-                        </svg>
-                        <p className="text-gray-400 text-sm">Kamera dimatikan</p>
-                        <button
-                          onClick={initCamera}
-                          className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
-                        >
-                          Aktifkan Kamera
-                        </button>
-                      </div>
                     </div>
                   ) : (
                     <>
@@ -813,12 +841,20 @@ export default function FaceRecognitionPage({
                   </div>
                 </div>
 
-                {/* TOMBOL AKTIFKAN KAMERA (muncul jika kamera belum siap atau error) */}
+                {/* TOMBOL AKTIFKAN KAMERA (selalu tampil jika kamera belum ready atau ada error) */}
                 {(!cameraReady || cameraError) && !isScanning && (
                   <button
                     onClick={() => {
-                      cleanupCamera(); // bersihkan stream lama
-                      initCamera();    // coba lagi
+                      // Jika sudah ada stream, coba play ulang tanpa meminta ulang izin
+                      if (streamRef.current && videoRef.current) {
+                        videoRef.current.play().catch(() => {
+                          // Jika play gagal, kita bisa coba init ulang
+                          cleanupCamera();
+                          initCamera();
+                        });
+                      } else {
+                        initCamera();
+                      }
                     }}
                     className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm transition"
                   >
@@ -926,7 +962,7 @@ export default function FaceRecognitionPage({
                   </ul>
                 </div>
 
-                {/* ===== PANEL DEBUG (tampil di frontend) ===== */}
+                {/* ===== PANEL DEBUG ===== */}
                 <div className="bg-gray-100 border border-gray-300 rounded-xl p-3 text-xs text-gray-700">
                   <p className="font-semibold text-gray-600 mb-1">🔧 Debug Info</p>
                   <div className="space-y-0.5">
@@ -935,6 +971,8 @@ export default function FaceRecognitionPage({
                     <p>Initializing: <span className="font-mono">{String(cameraInitializing)}</span></p>
                     <p>Video WxH: <span className="font-mono">{debugInfo.videoWidth} x {debugInfo.videoHeight}</span></p>
                     <p>canplay fired: <span className="font-mono">{String(debugInfo.canPlayFired)}</span></p>
+                    <p>loadedmetadata: <span className="font-mono">{String(debugInfo.loadedMetadataFired)}</span></p>
+                    <p>playing fired: <span className="font-mono">{String(debugInfo.playingFired)}</span></p>
                     <p>Init attempts: <span className="font-mono">{debugInfo.cameraInitAttempts}</span></p>
                     <p>Last error: <span className="font-mono text-red-600">{debugInfo.lastError || 'none'}</span></p>
                     <p>Stream active: <span className="font-mono">{streamRef.current ? 'yes' : 'no'}</span></p>
