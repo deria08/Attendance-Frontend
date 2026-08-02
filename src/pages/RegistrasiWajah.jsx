@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Footer from '../components/Footer';
 import logoSTTP from '../assets/logostt.png';
+import { FASTAPI_API_URL } from '../config';
 
 export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, onRegisterFace, userId, nim }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -177,7 +178,7 @@ export default function RegistrasiWajah({ mahasiswaList, userName, onNavigate, o
       formData.append('name', userName);
       formData.append('file', blob, 'face.jpg');
 
-      const response = await fetch('http://127.0.0.1:8000/api/register-face', {
+      const response = await fetch(`${FASTAPI_API_URL}/api/register-face`, {
         method: 'POST',
         body: formData,
       });
