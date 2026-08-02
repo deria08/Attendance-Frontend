@@ -132,26 +132,29 @@ export default function FaceRecognitionPage({
     }
   }, [courses, selectedCourse]);
 
-  // ===== 5. Kamera =====
+  // ===== 5. Kamera (Perbaikan utama) =====
   const initCamera = useCallback(async () => {
+    // Hentikan stream lama jika ada
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
     setCameraError('');
     setCameraReady(false);
     try {
       console.log('Meminta akses kamera...');
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+      });
       streamRef.current = stream;
       setCameraActive(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        console.log('srcObject set, mencoba play...');
-        // Coba mainkan video
-        const playPromise = videoRef.current.play();
-        if (playPromise !== undefined) {
-          await playPromise.catch(err => {
-            console.warn('Play error:', err);
-          });
-        }
-        console.log('Video play() called');
+
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        video.load(); // Force reload
+        await video.play();
+        console.log('Video dimainkan dengan stream');
       }
     } catch (error) {
       console.error('Camera error:', error);
@@ -164,58 +167,52 @@ export default function FaceRecognitionPage({
   useEffect(() => {
     initCamera();
     return () => {
-      stopCameraTracks();
-      if (videoRef.current) videoRef.current.srcObject = null;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cek readyState dan dimensi video
+  // Deteksi cameraReady dengan polling sederhana
   useEffect(() => {
+    if (!cameraActive) return;
     const video = videoRef.current;
-    if (!video || !cameraActive) return;
+    if (!video) return;
 
-    let frameId = null;
+    let interval = null;
     let attempts = 0;
-    const maxAttempts = 60; // ~6 detik
 
     const checkReady = () => {
-      attempts++;
-      console.log(`Checking camera ready: readyState=${video.readyState}, width=${video.videoWidth}, height=${video.videoHeight}`);
-      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-        console.log('Camera ready (polling)');
+      if (video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 2) {
+        console.log('Camera ready:', video.videoWidth, video.videoHeight);
         setCameraReady(true);
+        clearInterval(interval);
         return;
       }
-      if (attempts < maxAttempts) {
-        frameId = requestAnimationFrame(checkReady);
-      } else {
-        console.warn('Camera not ready after timeout, but forcing ready');
+      attempts++;
+      if (attempts > 50) { // 5 detik timeout
+        console.warn('Camera not ready after timeout, force ready');
         setCameraReady(true);
+        clearInterval(interval);
       }
     };
 
-    // Jika sudah siap langsung
-    if (video.readyState >= 2 && video.videoWidth > 0) {
-      setCameraReady(true);
-    } else {
-      frameId = requestAnimationFrame(checkReady);
+    // Cek langsung
+    checkReady();
+    // Jika belum siap, polling setiap 100ms
+    if (!cameraReady) {
+      interval = setInterval(checkReady, 100);
     }
 
-    const onLoadedData = () => {
-      console.log('loadeddata event, readyState:', video.readyState);
-      if (video.readyState >= 2 && video.videoWidth > 0) {
-        setCameraReady(true);
-        if (frameId) cancelAnimationFrame(frameId);
-      }
-    };
-    video.addEventListener('loadeddata', onLoadedData);
-
     return () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      video.removeEventListener('loadeddata', onLoadedData);
+      if (interval) clearInterval(interval);
     };
-  }, [cameraActive]);
+  }, [cameraActive, cameraReady]);
 
   const stopCameraTracks = useCallback(() => {
     if (streamRef.current) {
@@ -451,8 +448,8 @@ export default function FaceRecognitionPage({
 
   // ===== Handler Start Scan =====
   const handleStartScan = useCallback(() => {
-    // Jika kamera belum siap, coba init ulang
     if (!cameraReady) {
+      // Coba re-init kamera
       console.log('Camera not ready, re-initializing...');
       initCamera();
       setCameraError('Kamera sedang diaktifkan, tunggu sebentar...');
@@ -489,8 +486,13 @@ export default function FaceRecognitionPage({
   const handleLivenessSuccess = useCallback(async () => {
     setShowLiveness(false);
     setLivenessCompleted(true);
+    // Pastikan kamera FaceRecognitionPage masih aktif
+    // Jika stream mati, re-init
+    if (!streamRef.current || streamRef.current.getTracks().some(t => t.readyState === 'ended')) {
+      await initCamera();
+    }
     await processAttendance();
-  }, [processAttendance]);
+  }, [processAttendance, initCamera]);
 
   const handleLivenessCancel = useCallback(() => {
     setShowLiveness(false);
@@ -662,6 +664,7 @@ export default function FaceRecognitionPage({
                         playsInline
                         muted
                         className="w-full h-full object-cover"
+                        style={{ minHeight: '100%' }}
                       />
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="relative w-40 h-56 border-2 border-yellow-400 rounded-2xl opacity-70">
