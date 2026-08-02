@@ -143,8 +143,15 @@ export default function FaceRecognitionPage({
       setCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch((err) => console.warn('Play error:', err));
-        console.log('Video element srcObject set and play() called');
+        console.log('srcObject set, mencoba play...');
+        // Coba mainkan video
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          await playPromise.catch(err => {
+            console.warn('Play error:', err);
+          });
+        }
+        console.log('Video play() called');
       }
     } catch (error) {
       console.error('Camera error:', error);
@@ -163,7 +170,7 @@ export default function FaceRecognitionPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Polling untuk deteksi cameraReady
+  // Cek readyState dan dimensi video
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !cameraActive) return;
@@ -174,7 +181,7 @@ export default function FaceRecognitionPage({
 
     const checkReady = () => {
       attempts++;
-      // Video siap jika readyState >= 2 dan dimensi > 0
+      console.log(`Checking camera ready: readyState=${video.readyState}, width=${video.videoWidth}, height=${video.videoHeight}`);
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
         console.log('Camera ready (polling)');
         setCameraReady(true);
@@ -183,17 +190,8 @@ export default function FaceRecognitionPage({
       if (attempts < maxAttempts) {
         frameId = requestAnimationFrame(checkReady);
       } else {
-        // Fallback: jika masih belum siap, coba mainkan ulang
-        video.play().catch(() => {});
-        setTimeout(() => {
-          if (video.readyState >= 2 && video.videoWidth > 0) {
-            setCameraReady(true);
-          } else {
-            // Force ready agar tombol bisa diklik (tapi mungkin video tetap tidak tampil)
-            console.warn('Force camera ready after timeout');
-            setCameraReady(true);
-          }
-        }, 500);
+        console.warn('Camera not ready after timeout, but forcing ready');
+        setCameraReady(true);
       }
     };
 
@@ -204,10 +202,9 @@ export default function FaceRecognitionPage({
       frameId = requestAnimationFrame(checkReady);
     }
 
-    // Event listener loadeddata sebagai cadangan
     const onLoadedData = () => {
+      console.log('loadeddata event, readyState:', video.readyState);
       if (video.readyState >= 2 && video.videoWidth > 0) {
-        console.log('Camera ready (loadeddata)');
         setCameraReady(true);
         if (frameId) cancelAnimationFrame(frameId);
       }
@@ -665,7 +662,6 @@ export default function FaceRecognitionPage({
                         playsInline
                         muted
                         className="w-full h-full object-cover"
-                        style={{ minHeight: '100%' }}
                       />
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="relative w-40 h-56 border-2 border-yellow-400 rounded-2xl opacity-70">
