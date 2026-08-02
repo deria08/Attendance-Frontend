@@ -133,6 +133,11 @@ export default function FaceRecognitionPage({
   }, [courses, selectedCourse]);
 
   // ===== 5. Kamera =====
+  // PENTING: <video> SELALU dirender di JSX (lihat bagian render di bawah),
+  // tidak lagi disembunyikan di balik kondisi `cameraActive`.
+  // Ini mencegah videoRef.current bernilai null saat stream siap di-attach,
+  // yang sebelumnya menyebabkan blackscreen di production (StrictMode
+  // "menyelamatkan" bug ini di localhost karena effect dipanggil dua kali).
   const stopCameraTracks = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -145,11 +150,16 @@ export default function FaceRecognitionPage({
     setCameraReady(false);
     try {
       console.log('Meminta akses kamera...');
+      // Hentikan stream lama (jika ada) sebelum minta stream baru
       stopCameraTracks();
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user' },
       });
       streamRef.current = stream;
+      // Jangan attach srcObject di sini. <video> mungkin belum ter-mount
+      // (atau videoRef belum sinkron dengan render terbaru). Attach
+      // dilakukan di useEffect terpisah yang bereaksi pada `cameraActive`.
       setCameraActive(true);
     } catch (error) {
       console.error('Camera error:', error);
@@ -158,18 +168,23 @@ export default function FaceRecognitionPage({
     }
   }, [stopCameraTracks]);
 
+  // Attach stream ke elemen <video> setiap kali stream/cameraActive berubah,
+  // DAN setiap kali videoRef benar-benar sudah menunjuk ke elemen video (mount).
   useEffect(() => {
     const video = videoRef.current;
     if (!cameraActive || !streamRef.current || !video) return;
+
     if (video.srcObject !== streamRef.current) {
       video.srcObject = streamRef.current;
     }
+
     const playPromise = video.play();
     if (playPromise && typeof playPromise.catch === 'function') {
       playPromise.catch((err) => console.warn('Play error:', err));
     }
   }, [cameraActive]);
 
+  // Auto init saat mount
   useEffect(() => {
     initCamera();
     return () => {
@@ -179,14 +194,18 @@ export default function FaceRecognitionPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Polling untuk deteksi cameraReady
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !cameraActive) return;
+
     let frameId = null;
     let attempts = 0;
-    const maxAttempts = 60;
+    const maxAttempts = 60; // ~6 detik
+
     const checkReady = () => {
       attempts++;
+      // Video siap jika readyState >= 2 dan dimensi > 0
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
         console.log('Camera ready (polling)');
         setCameraReady(true);
@@ -195,22 +214,28 @@ export default function FaceRecognitionPage({
       if (attempts < maxAttempts) {
         frameId = requestAnimationFrame(checkReady);
       } else {
+        // Fallback: jika masih belum siap, coba mainkan ulang
         video.play().catch(() => {});
         setTimeout(() => {
           if (video.readyState >= 2 && video.videoWidth > 0) {
             setCameraReady(true);
           } else {
+            // Force ready agar tombol bisa diklik (tapi mungkin video tetap tidak tampil)
             console.warn('Force camera ready after timeout');
             setCameraReady(true);
           }
         }, 500);
       }
     };
+
+    // Jika sudah siap langsung
     if (video.readyState >= 2 && video.videoWidth > 0) {
       setCameraReady(true);
     } else {
       frameId = requestAnimationFrame(checkReady);
     }
+
+    // Event listener loadeddata sebagai cadangan
     const onLoadedData = () => {
       if (video.readyState >= 2 && video.videoWidth > 0) {
         console.log('Camera ready (loadeddata)');
@@ -219,6 +244,7 @@ export default function FaceRecognitionPage({
       }
     };
     video.addEventListener('loadeddata', onLoadedData);
+
     return () => {
       if (frameId) cancelAnimationFrame(frameId);
       video.removeEventListener('loadeddata', onLoadedData);
@@ -238,6 +264,7 @@ export default function FaceRecognitionPage({
     const canvas = canvasRef.current;
     if (!video || !canvas) throw new Error('Camera not ready');
     if (!cameraReady || video.videoWidth === 0) throw new Error('Camera masih memuat, tunggu sebentar');
+
     const videoWidth = video.videoWidth;
     const videoHeight = video.videoHeight;
     const cropSize = 400;
@@ -247,6 +274,7 @@ export default function FaceRecognitionPage({
     const startY = Math.max(0, centerY - cropSize / 2);
     const actualCropWidth = Math.min(cropSize, videoWidth - startX);
     const actualCropHeight = Math.min(cropSize, videoHeight - startY);
+
     canvas.width = actualCropWidth;
     canvas.height = actualCropHeight;
     const context = canvas.getContext('2d');
@@ -274,74 +302,77 @@ export default function FaceRecognitionPage({
     [capturePhoto]
   );
 
-  // ===== GPS ===== (DIPERBAIKI)
-  const getLocationSamples = useCallback(
-    (sampleCount = 5, intervalMs = 1200) => {
-      return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error('Geolocation tidak didukung oleh browser ini'));
+  // ===== GPS =====
+const getLocationSamples = useCallback(
+  (sampleCount = 5, intervalMs = 1200) => {
+    return new Promise((resolve, reject) => {
+      // Cek dukungan geolokasi
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation tidak didukung oleh browser ini'));
+        return;
+      }
+
+      const samples = [];
+      let completed = 0;
+      let timedOut = false;
+      let totalTimeout = 20000; // 20 detik total
+
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        // Jika minimal 3 sampel terkumpul, tetap resolve
+        if (samples.length >= 3) {
+          resolve(samples);
+        } else {
+          reject(new Error(`Timeout: hanya ${samples.length} sampel terkumpul (minimal 3)`));
+        }
+      }, totalTimeout);
+
+      const takeSample = () => {
+        if (timedOut || completed >= sampleCount) {
+          clearTimeout(timeoutId);
+          resolve(samples);
           return;
         }
-        const samples = [];
-        let completed = 0;
-        let timedOut = false;
-        const totalTimeout = 20000; // 20 detik total
 
-        const timeoutId = setTimeout(() => {
-          timedOut = true;
-          if (samples.length >= 3) {
-            resolve(samples);
-          } else {
-            reject(new Error(`Timeout: hanya ${samples.length} sampel terkumpul (minimal 3)`));
-          }
-        }, totalTimeout);
-
-        const takeSample = () => {
-          if (timedOut || completed >= sampleCount) {
-            clearTimeout(timeoutId);
-            resolve(samples);
-            return;
-          }
-
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              samples.push({
-                lat: position.coords.latitude,
-                lon: position.coords.longitude,
-                accuracy: position.coords.accuracy,
-                timestamp: position.timestamp,
-              });
-              completed++;
-              if (completed >= sampleCount) {
-                clearTimeout(timeoutId);
-                resolve(samples);
-                return;
-              }
-              setTimeout(takeSample, intervalMs);
-            },
-            (error) => {
-              console.warn('GPS error:', error.message);
-              completed++;
-              if (completed >= sampleCount) {
-                clearTimeout(timeoutId);
-                resolve(samples);
-                return;
-              }
-              setTimeout(takeSample, intervalMs);
-            },
-            {
-              enableHighAccuracy: true,
-              timeout: 10000, // 10 detik per request
-              maximumAge: 0,
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            samples.push({
+              lat: position.coords.latitude,
+              lon: position.coords.longitude,
+              accuracy: position.coords.accuracy,
+              timestamp: position.timestamp,
+            });
+            completed++;
+            if (completed >= sampleCount) {
+              clearTimeout(timeoutId);
+              resolve(samples);
+              return;
             }
-          );
-        };
-
-        takeSample();
-      });
-    },
-    []
-  );
+            setTimeout(takeSample, intervalMs);
+          },
+          (error) => {
+            console.warn('GPS error:', error.message);
+            // Meskipun error, kita increment completed agar tidak looping forever
+            completed++;
+            if (completed >= sampleCount) {
+              clearTimeout(timeoutId);
+              resolve(samples);
+              return;
+            }
+            setTimeout(takeSample, intervalMs);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000, // 10 detik per request
+            maximumAge: 0,
+          }
+        );
+      };
+      takeSample();
+    });
+  },
+  []
+);
 
   // ===== Kirim absensi =====
   const takeAttendance = useCallback(
@@ -380,7 +411,7 @@ export default function FaceRecognitionPage({
     [userName, selectedCourse]
   );
 
-  // ===== Proses utama absensi ===== (diperbaiki panggilan GPS)
+  // ===== Proses utama absensi =====
   const processAttendance = useCallback(async () => {
     const steps = [
       { label: 'Mengambil sampel GPS', status: 'pending' },
@@ -395,7 +426,7 @@ export default function FaceRecognitionPage({
 
     try {
       updateProgress(0, 'active');
-      const samples = await getLocationSamples(5, 1200); // <-- DIUBAH
+      const samples = await getLocationSamples(5, 1200);
       if (samples.length < 5) {
         throw new Error('Gagal mengambil cukup sampel GPS (minimal 5)');
       }
@@ -459,6 +490,7 @@ export default function FaceRecognitionPage({
 
   // ===== Handler Start Scan =====
   const handleStartScan = useCallback(() => {
+    // Jika kamera belum siap, coba init ulang
     if (!cameraReady) {
       console.log('Camera not ready, re-initializing...');
       initCamera();
@@ -618,6 +650,14 @@ export default function FaceRecognitionPage({
                   </div>
                 )}
 
+                {/*
+                  FIX: elemen <video> SELALU dirender (tidak lagi di-unmount
+                  saat cameraError / !cameraActive). Semua state loading /
+                  error ditampilkan sebagai overlay absolute DI ATAS video,
+                  bukan menggantikan elemen video di DOM. Ini menghilangkan
+                  race condition videoRef.current === null yang menyebabkan
+                  blackscreen di production.
+                */}
                 <div className="relative bg-gray-900 rounded-xl overflow-hidden aspect-video shadow-inner">
                   <video
                     ref={videoRef}
@@ -628,6 +668,7 @@ export default function FaceRecognitionPage({
                     style={{ minHeight: '100%' }}
                   />
 
+                  {/* Guide box overlay - hanya tampil saat kamera aktif & tidak error */}
                   {cameraActive && !cameraError && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="relative w-40 h-56 border-2 border-yellow-400 rounded-2xl opacity-70">
@@ -638,6 +679,7 @@ export default function FaceRecognitionPage({
                     </div>
                   )}
 
+                  {/* Overlay error kamera */}
                   {cameraError && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-gray-900">
                       <svg
@@ -663,6 +705,7 @@ export default function FaceRecognitionPage({
                     </div>
                   )}
 
+                  {/* Overlay loading (belum ada error, kamera belum aktif) */}
                   {!cameraError && !cameraActive && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                       <div className="text-center">
@@ -847,7 +890,7 @@ export default function FaceRecognitionPage({
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                       <path
                         fillRule="evenodd"
-                        d="M18 10a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
                         clipRule="evenodd"
                       />
                     </svg>
