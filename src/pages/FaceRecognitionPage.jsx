@@ -853,6 +853,8 @@ export default function FaceRecognitionPage({
       {showLiveness && (
         <LivenessChallenge
           userId={userId}
+          videoRef={videoRef}
+          streamRef={streamRef}
           onSuccess={handleLivenessSuccess}
           onCancel={handleLivenessCancel}
         />
