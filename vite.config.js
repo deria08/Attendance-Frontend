@@ -61,7 +61,7 @@ export default defineConfig({
         manualChunks: {
           'react-vendor': ['react', 'react-dom'],
           'recharts': ['recharts'],
-          'xlsx': ['xlsx'],
+          // 'xlsx': ['xlsx'],
         },
       },
     },
