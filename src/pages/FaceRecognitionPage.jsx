@@ -15,7 +15,6 @@ export default function FaceRecognitionPage({
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState('');
-  const [cameraInitializing, setCameraInitializing] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -43,6 +42,9 @@ export default function FaceRecognitionPage({
   const [activeMeeting, setActiveMeeting] = useState(null);
   const [activeMeetingLoading, setActiveMeetingLoading] = useState(false);
   const [activeMeetingError, setActiveMeetingError] = useState(null);
+
+  // Debug state
+  const [debugInfo, setDebugInfo] = useState({});
 
   // ===== Fungsi updateProgress =====
   const updateProgress = useCallback((stepIndex, status, label) => {
@@ -134,134 +136,74 @@ export default function FaceRecognitionPage({
   }, [courses, selectedCourse]);
 
   // ===== 5. Kamera =====
+  const initCamera = useCallback(async () => {
+    // Jangan init ulang jika sudah aktif
+    if (streamRef.current) return;
+
+    setCameraError('');
+    setCameraReady(false);
+    try {
+      console.log('Meminta akses kamera...');
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      streamRef.current = stream;
+      setCameraActive(true);
+
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play();
+          setCameraReady(true);
+          console.log('Kamera siap (loadedmetadata)');
+        };
+        // Fallback jika loadedmetadata tidak terpanggil
+        setTimeout(() => {
+          if (!cameraReady && video.videoWidth > 0) {
+            setCameraReady(true);
+            console.log('Kamera siap (timeout fallback)');
+          }
+        }, 2000);
+      } else {
+        setCameraError('Video element not found');
+        console.error('Video element not found');
+      }
+    } catch (error) {
+      console.error('Camera error:', error);
+      setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.');
+      setCameraActive(false);
+    }
+  }, [cameraReady]);
+
+  // Inisialisasi kamera setelah render (pastikan videoRef terpasang)
+  useEffect(() => {
+    // Tunggu 100ms untuk memastikan video element sudah dirender
+    const timer = setTimeout(() => {
+      initCamera();
+    }, 100);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Pembersihan
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+        videoRef.current.onloadedmetadata = null;
+      }
+    };
+  }, []);
+
   const stopCameraTracks = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
   }, []);
-
-  const initCamera = useCallback(async () => {
-    setCameraError('');
-    setCameraReady(false);
-    setCameraInitializing(true);
-    try {
-      console.log('Meminta akses kamera...');
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      streamRef.current = stream;
-      setCameraActive(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        // Coba play, jika gagal karena autoplay policy, user bisa klik tombol
-        try {
-          await videoRef.current.play();
-          console.log('Video play berhasil');
-        } catch (playErr) {
-          console.warn('Autoplay diblokir, video akan diputar dengan tombol');
-          setCameraError('Autoplay diblokir. Klik "Putar Video" untuk memulai.');
-          // Jangan set cameraActive false, biarkan stream aktif
-        }
-      }
-      console.log('Kamera aktif');
-    } catch (error) {
-      console.error('Camera error:', error);
-      setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.');
-      setCameraActive(false);
-    } finally {
-      setCameraInitializing(false);
-    }
-  }, []);
-
-  // Fungsi untuk memutar video saat tombol diklik
-  const playVideo = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) {
-      video.play()
-        .then(() => {
-          console.log('Video play berhasil dari tombol');
-          setCameraError('');
-        })
-        .catch(err => {
-          console.error('Gagal play video:', err);
-          setCameraError('Gagal memutar video. Coba lagi.');
-        });
-    } else {
-      // Jika video sudah berjalan, cek ready
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        setCameraReady(true);
-        setCameraError('');
-      }
-    }
-  }, []);
-
-  // Inisialisasi kamera otomatis saat mount
-  useEffect(() => {
-    initCamera();
-    return () => {
-      stopCameraTracks();
-      if (videoRef.current) videoRef.current.srcObject = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ===== Deteksi cameraReady dengan berbagai event =====
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !cameraActive) {
-      // Jika kamera tidak aktif, reset ready
-      if (cameraReady) setCameraReady(false);
-      return;
-    }
-
-    const markReady = () => {
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        console.log('Camera ready!', video.videoWidth, video.videoHeight);
-        setCameraReady(true);
-        setCameraError('');
-        return true;
-      }
-      return false;
-    };
-
-    const handleReady = () => {
-      markReady();
-    };
-
-    // Pasang event listener untuk berbagai event
-    video.addEventListener('loadedmetadata', handleReady);
-    video.addEventListener('playing', handleReady);
-    video.addEventListener('canplay', handleReady);
-
-    // Cek langsung
-    if (markReady()) {
-      // Jika sudah siap, tidak perlu interval
-    }
-
-    // Interval fallback
-    const interval = setInterval(() => {
-      if (markReady()) {
-        // Jika sudah ready, kita bisa berhenti interval
-        clearInterval(interval);
-      }
-    }, 200);
-
-    // Timeout: jika setelah 10 detik belum ready, beri pesan
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      if (!cameraReady) {
-        setCameraError('Kamera tidak siap. Coba klik "Putar Video" atau refresh.');
-      }
-    }, 10000);
-
-    return () => {
-      clearTimeout(timeout);
-      clearInterval(interval);
-      video.removeEventListener('loadedmetadata', handleReady);
-      video.removeEventListener('playing', handleReady);
-      video.removeEventListener('canplay', handleReady);
-    };
-  }, [cameraActive, cameraReady]);
 
   const cleanupCamera = useCallback(() => {
     stopCameraTracks();
@@ -491,7 +433,7 @@ export default function FaceRecognitionPage({
   // ===== Handler Start Scan =====
   const handleStartScan = useCallback(() => {
     if (!cameraReady) {
-      setCameraError('Kamera belum siap. Klik "Putar Video" terlebih dahulu.');
+      setCameraError('Kamera belum siap, tunggu sebentar...');
       return;
     }
     if (attendanceStatus[selectedCourse]) {
@@ -551,6 +493,23 @@ export default function FaceRecognitionPage({
     setLivenessCompleted(false);
     onNavigate('mahasiswa-dashboard');
   }, [cleanupCamera, onNavigate]);
+
+  // ===== Debug =====
+  useEffect(() => {
+    setDebugInfo({
+      cameraActive,
+      cameraReady,
+      cameraError,
+      hasStream: !!streamRef.current,
+      streamTracks: streamRef.current ? streamRef.current.getTracks().length : 0,
+      videoReadyState: videoRef.current ? videoRef.current.readyState : 'null',
+      videoSize: videoRef.current ? `${videoRef.current.videoWidth}x${videoRef.current.videoHeight}` : 'null',
+      videoPaused: videoRef.current ? videoRef.current.paused : 'null',
+      srcObject: !!videoRef.current?.srcObject,
+      selectedCourse,
+      activeMeeting: !!activeMeeting,
+    });
+  }, [cameraActive, cameraReady, cameraError, selectedCourse, activeMeeting]);
 
   // ===== Render =====
   return (
@@ -648,7 +607,7 @@ export default function FaceRecognitionPage({
                 )}
 
                 <div className="relative bg-gray-900 rounded-xl overflow-hidden aspect-video shadow-inner">
-                  {cameraError && !cameraActive ? (
+                  {cameraError ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
                       <svg
                         className="w-12 h-12 text-gray-500 mb-3"
@@ -665,7 +624,7 @@ export default function FaceRecognitionPage({
                       </svg>
                       <p className="text-gray-400 text-sm text-center mb-3">{cameraError}</p>
                       <button
-                        onClick={initCamera}
+                        onClick={() => { initCamera(); }}
                         className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm"
                       >
                         Coba Aktifkan Kamera
@@ -780,16 +739,6 @@ export default function FaceRecognitionPage({
                   </div>
                 </div>
 
-                {/* Tombol Putar Video jika ada error autoplay atau jika belum ready */}
-                {(!cameraReady || cameraError) && !isScanning && (
-                  <button
-                    onClick={playVideo}
-                    className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm transition"
-                  >
-                    ▶️ Putar Video
-                  </button>
-                )}
-
                 <button
                   onClick={handleCancel}
                   className="w-full border border-gray-300 text-gray-700 font-medium py-2 rounded-lg text-sm hover:bg-gray-50 transition"
@@ -887,6 +836,14 @@ export default function FaceRecognitionPage({
                     <li>Posisi kepala <span className="font-medium">lurus</span></li>
                     <li>Ikuti instruksi liveness</li>
                   </ul>
+                </div>
+
+                {/* Debug Panel */}
+                <div className="bg-gray-100 border border-gray-300 rounded-xl p-3 text-xs text-gray-700">
+                  <p className="font-semibold mb-1">Debug Info:</p>
+                  <pre className="whitespace-pre-wrap">
+                    {JSON.stringify(debugInfo, null, 2)}
+                  </pre>
                 </div>
               </div>
             </div>
