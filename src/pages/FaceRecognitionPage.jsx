@@ -132,7 +132,7 @@ export default function FaceRecognitionPage({
     }
   }, [courses, selectedCourse]);
 
-  // ===== 5. Kamera =====
+  // ===== 5. Kamera (Perbaikan utama) =====
   const initCamera = useCallback(async () => {
     setCameraError('');
     setCameraReady(false);
@@ -143,7 +143,14 @@ export default function FaceRecognitionPage({
       setCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch((err) => console.error('Error playing video:', err));
+        // Coba mainkan video
+        await videoRef.current.play().catch((err) => {
+          console.warn('Video play error:', err);
+        });
+        // Setelah play, coba periksa langsung
+        if (videoRef.current.videoWidth > 0) {
+          setCameraReady(true);
+        }
       }
       console.log('Kamera aktif');
     } catch (error) {
@@ -162,54 +169,49 @@ export default function FaceRecognitionPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Perbaikan: pengecekan cameraReady yang lebih robust
+  // Polling untuk memastikan cameraReady
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !cameraActive) return;
 
+    let frameId = null;
+    let attempts = 0;
+    const maxAttempts = 50; // ~5 detik (100ms per attempt)
+
     const checkReady = () => {
+      attempts++;
       if (video.videoWidth > 0 && video.videoHeight > 0) {
-        console.log('Camera ready (checkReady)');
+        console.log('Camera ready (polling)');
         setCameraReady(true);
-        return true;
+        cancelAnimationFrame(frameId);
+        return;
       }
-      return false;
+      if (attempts < maxAttempts) {
+        frameId = requestAnimationFrame(checkReady);
+      } else {
+        // Setelah timeout, jika masih belum siap, set ready true sebagai fallback
+        console.warn('Camera not ready after timeout, forcing ready');
+        setCameraReady(true);
+      }
     };
 
-    const handleCanPlay = () => {
-      if (checkReady()) {
-        video.removeEventListener('canplay', handleCanPlay);
+    // Mulai polling
+    frameId = requestAnimationFrame(checkReady);
+
+    // Juga pasang event listener untuk loadedmetadata
+    const onLoadedMetadata = () => {
+      if (video.videoWidth > 0) {
+        console.log('Camera ready (loadedmetadata)');
+        setCameraReady(true);
+        cancelAnimationFrame(frameId);
       }
     };
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
 
-    video.addEventListener('canplay', handleCanPlay);
-
-    // Cek langsung jika sudah siap
-    if (checkReady()) {
-      video.removeEventListener('canplay', handleCanPlay);
-    } else {
-      // Interval pengecekan tambahan
-      const interval = setInterval(() => {
-        if (checkReady()) {
-          clearInterval(interval);
-          video.removeEventListener('canplay', handleCanPlay);
-        }
-      }, 200);
-
-      // Timeout untuk memberi tahu gagal
-      const timeout = setTimeout(() => {
-        clearInterval(interval);
-        if (!video.videoWidth || video.videoWidth === 0) {
-          setCameraError('Kamera tidak merespons, coba refresh halaman.');
-        }
-      }, 5000);
-
-      return () => {
-        clearTimeout(timeout);
-        clearInterval(interval);
-        video.removeEventListener('canplay', handleCanPlay);
-      };
-    }
+    return () => {
+      cancelAnimationFrame(frameId);
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+    };
   }, [cameraActive]);
 
   const stopCameraTracks = useCallback(() => {
