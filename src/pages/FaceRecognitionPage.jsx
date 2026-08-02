@@ -133,74 +133,79 @@ export default function FaceRecognitionPage({
   }, [courses, selectedCourse]);
 
   // ===== 5. Kamera =====
-  // Inisialisasi kamera: hanya minta stream dan set state
+  // PENTING: <video> SELALU dirender di JSX (lihat bagian render di bawah),
+  // tidak lagi disembunyikan di balik kondisi `cameraActive`.
+  // Ini mencegah videoRef.current bernilai null saat stream siap di-attach,
+  // yang sebelumnya menyebabkan blackscreen di production (StrictMode
+  // "menyelamatkan" bug ini di localhost karena effect dipanggil dua kali).
+  const stopCameraTracks = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
   const initCamera = useCallback(async () => {
     setCameraError('');
     setCameraReady(false);
     try {
       console.log('Meminta akses kamera...');
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      // Hentikan stream lama (jika ada) sebelum minta stream baru
+      stopCameraTracks();
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+      });
       streamRef.current = stream;
-      setCameraActive(true); // Trigger re-render, video akan muncul
-      console.log('Stream kamera berhasil didapat');
+      // Jangan attach srcObject di sini. <video> mungkin belum ter-mount
+      // (atau videoRef belum sinkron dengan render terbaru). Attach
+      // dilakukan di useEffect terpisah yang bereaksi pada `cameraActive`.
+      setCameraActive(true);
     } catch (error) {
       console.error('Camera error:', error);
       setCameraError('Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.');
       setCameraActive(false);
     }
-  }, []);
+  }, [stopCameraTracks]);
+
+  // Attach stream ke elemen <video> setiap kali stream/cameraActive berubah,
+  // DAN setiap kali videoRef benar-benar sudah menunjuk ke elemen video (mount).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!cameraActive || !streamRef.current || !video) return;
+
+    if (video.srcObject !== streamRef.current) {
+      video.srcObject = streamRef.current;
+    }
+
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch((err) => console.warn('Play error:', err));
+    }
+  }, [cameraActive]);
 
   // Auto init saat mount
   useEffect(() => {
     initCamera();
     return () => {
-      // Cleanup saat unmount
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-      setCameraActive(false);
-      setCameraReady(false);
+      stopCameraTracks();
+      if (videoRef.current) videoRef.current.srcObject = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Effect terpisah untuk attach stream ke video setelah video siap di DOM
-  useEffect(() => {
-    const video = videoRef.current;
-    if (cameraActive && streamRef.current && video) {
-      // Hanya attach jika belum sama
-      if (video.srcObject !== streamRef.current) {
-        console.log('Attaching stream to video element');
-        video.srcObject = streamRef.current;
-        video
-          .play()
-          .then(() => {
-            console.log('Video play() berhasil');
-            // Setelah play, cek kesiapan
-            if (video.readyState >= 2 && video.videoWidth > 0) {
-              setCameraReady(true);
-            }
-          })
-          .catch((err) => console.warn('Play error:', err));
-      }
-    }
-  }, [cameraActive]);
-
-  // Polling untuk deteksi cameraReady (sama seperti sebelumnya, tapi hanya berjalan jika video sudah attach)
+  // Polling untuk deteksi cameraReady
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !cameraActive) return;
 
     let frameId = null;
     let attempts = 0;
-    const maxAttempts = 60;
+    const maxAttempts = 60; // ~6 detik
 
     const checkReady = () => {
       attempts++;
+      // Video siap jika readyState >= 2 dan dimensi > 0
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
         console.log('Camera ready (polling)');
         setCameraReady(true);
@@ -209,9 +214,17 @@ export default function FaceRecognitionPage({
       if (attempts < maxAttempts) {
         frameId = requestAnimationFrame(checkReady);
       } else {
-        // Fallback: force ready jika sudah ada stream
-        console.warn('Force camera ready after timeout');
-        setCameraReady(true);
+        // Fallback: jika masih belum siap, coba mainkan ulang
+        video.play().catch(() => {});
+        setTimeout(() => {
+          if (video.readyState >= 2 && video.videoWidth > 0) {
+            setCameraReady(true);
+          } else {
+            // Force ready agar tombol bisa diklik (tapi mungkin video tetap tidak tampil)
+            console.warn('Force camera ready after timeout');
+            setCameraReady(true);
+          }
+        }, 500);
       }
     };
 
@@ -222,6 +235,7 @@ export default function FaceRecognitionPage({
       frameId = requestAnimationFrame(checkReady);
     }
 
+    // Event listener loadeddata sebagai cadangan
     const onLoadedData = () => {
       if (video.readyState >= 2 && video.videoWidth > 0) {
         console.log('Camera ready (loadeddata)');
@@ -236,13 +250,6 @@ export default function FaceRecognitionPage({
       video.removeEventListener('loadeddata', onLoadedData);
     };
   }, [cameraActive]);
-
-  const stopCameraTracks = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-  }, []);
 
   const cleanupCamera = useCallback(() => {
     stopCameraTracks();
@@ -631,8 +638,15 @@ export default function FaceRecognitionPage({
                   </div>
                 )}
 
+                {/*
+                  FIX: elemen <video> SELALU dirender (tidak lagi di-unmount
+                  saat cameraError / !cameraActive). Semua state loading /
+                  error ditampilkan sebagai overlay absolute DI ATAS video,
+                  bukan menggantikan elemen video di DOM. Ini menghilangkan
+                  race condition videoRef.current === null yang menyebabkan
+                  blackscreen di production.
+                */}
                 <div className="relative bg-gray-900 rounded-xl overflow-hidden aspect-video shadow-inner">
-                  {/* Video selalu ada */}
                   <video
                     ref={videoRef}
                     autoPlay
@@ -642,18 +656,20 @@ export default function FaceRecognitionPage({
                     style={{ minHeight: '100%' }}
                   />
 
-                  {/* Overlay guide box (tetap di atas video) */}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="relative w-40 h-56 border-2 border-yellow-400 rounded-2xl opacity-70">
-                      <div className="absolute top-12 left-6 w-6 h-6 border-2 border-white rounded-full opacity-50"></div>
-                      <div className="absolute top-12 right-6 w-6 h-6 border-2 border-white rounded-full opacity-50"></div>
-                      <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 w-6 h-1.5 border-2 border-white rounded-full opacity-50"></div>
+                  {/* Guide box overlay - hanya tampil saat kamera aktif & tidak error */}
+                  {cameraActive && !cameraError && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="relative w-40 h-56 border-2 border-yellow-400 rounded-2xl opacity-70">
+                        <div className="absolute top-12 left-6 w-6 h-6 border-2 border-white rounded-full opacity-50"></div>
+                        <div className="absolute top-12 right-6 w-6 h-6 border-2 border-white rounded-full opacity-50"></div>
+                        <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 w-6 h-1.5 border-2 border-white rounded-full opacity-50"></div>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Overlay error */}
+                  {/* Overlay error kamera */}
                   {cameraError && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-gray-900/90">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-gray-900">
                       <svg
                         className="w-12 h-12 text-gray-500 mb-3"
                         fill="none"
@@ -677,7 +693,7 @@ export default function FaceRecognitionPage({
                     </div>
                   )}
 
-                  {/* Overlay loading kamera (jika belum aktif) */}
+                  {/* Overlay loading (belum ada error, kamera belum aktif) */}
                   {!cameraError && !cameraActive && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                       <div className="text-center">
@@ -699,7 +715,6 @@ export default function FaceRecognitionPage({
                     </div>
                   )}
 
-                  {/* Overlay scanning */}
                   {isScanning && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/60">
                       <div className="text-center">
