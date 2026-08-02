@@ -143,14 +143,18 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
       setNextChallenge(data.next_challenge);
       setInstruction(buildInstruction(data.next_challenge));
 
-      setTimeLeft(data.timeout_seconds || 12);
       setRemainingAttempts(data.remaining_attempts || 3);
 
       statusRef.current = STATUS.IDLE;
       setStatus(STATUS.IDLE);
       setError(null);
 
-      startCountdown();
+      // Timer 12 detik ini adalah jatah waktu untuk MELAKUKAN gesture,
+      // bukan untuk menunggu upload + verifikasi server (lihat pauseCountdown
+      // di uploadFrames di bawah). Ini yang membuat waktu "tidak konsisten"
+      // di production sebelumnya, karena latency jaringan/backend ikut
+      // memotong 12 detik yang sama.
+      startCountdown(data.timeout_seconds || 12);
       startCaptureLoop();
 
     } catch (err) {
@@ -160,9 +164,15 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
     }
   };
 
-  const startCountdown = () => {
+  // ===== Countdown helpers =====
+
+  // startCountdown: reset timeLeft ke `seconds` lalu mulai interval baru.
+  // Dipakai saat challenge baru dimulai / berpindah ke challenge berikutnya
+  // / retry gesture salah — semua kasus di mana user memang layak dapat
+  // jatah waktu penuh lagi.
+  const startCountdown = useCallback((seconds = 12) => {
     if (countdownInterval.current) clearInterval(countdownInterval.current);
-    setTimeLeft(12);
+    setTimeLeft(seconds);
     countdownInterval.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
@@ -174,7 +184,37 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
         return prev - 1;
       });
     }, 1000);
-  };
+  }, []);
+
+  // pauseCountdown: hentikan interval TANPA mereset timeLeft. Dipakai saat
+  // frame sedang diupload & diverifikasi ke server, supaya latency jaringan
+  // / waktu proses backend (yang di production jauh lebih variatif daripada
+  // di localhost) tidak ikut memotong waktu yang tersedia untuk melakukan
+  // gesture liveness.
+  const pauseCountdown = useCallback(() => {
+    if (countdownInterval.current) {
+      clearInterval(countdownInterval.current);
+      countdownInterval.current = null;
+    }
+  }, []);
+
+  // resumeCountdownTick: lanjutkan hitungan mundur dari sisa timeLeft
+  // terakhir (tidak reset). Dipakai hanya untuk kasus error upload/jaringan
+  // saat retry capture di attempt yang sama.
+  const resumeCountdownTick = useCallback(() => {
+    if (countdownInterval.current) clearInterval(countdownInterval.current);
+    countdownInterval.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownInterval.current);
+          countdownInterval.current = null;
+          handleTimeout();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
   const handleTimeout = async () => {
     if (countdownInterval.current) {
@@ -182,6 +222,11 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
       countdownInterval.current = null;
     }
     if (!sessionIdRef.current || isCompleted || statusRef.current === STATUS.FAILED) return;
+    // Jangan trigger timeout kalau sedang menunggu hasil verifikasi server -
+    // biarkan response uploadFrames yang menentukan langkah berikutnya.
+    // (Secara normal ini sudah dicegah karena timer di-pause saat VERIFYING,
+    // tapi guard ini tetap dipertahankan untuk jaga-jaga race condition.)
+    if (statusRef.current === STATUS.VERIFYING) return;
     try {
       const formData = new FormData();
       formData.append('session_id', sessionIdRef.current);
@@ -247,6 +292,10 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
 
     statusRef.current = STATUS.VERIFYING;
     setStatus(STATUS.VERIFYING);
+    // PAUSE countdown selama upload + proses verifikasi di server.
+    // Ini kunci perbaikannya: waktu network/backend tidak lagi memotong
+    // budget 12 detik yang seharusnya untuk user melakukan gesture.
+    pauseCountdown();
 
     try {
       const formData = new FormData();
@@ -265,6 +314,13 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
         throw new Error(data.detail || 'Verifikasi gagal');
       }
 
+      // Kalau komponen sudah unmount, atau sesi terlanjur ditandai FAILED
+      // dari jalur lain saat menunggu response ini, jangan lanjut memproses
+      // supaya tidak override state yang sudah final.
+      if (!isMounted.current || statusRef.current === STATUS.FAILED) {
+        return;
+      }
+
       if (data.session_invalid) {
         setError(data.error || 'Session expired, membuat session baru...');
         await createSession();
@@ -275,10 +331,7 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
         setIsCompleted(true);
         setStatus(STATUS.SUCCESS);
         statusRef.current = STATUS.SUCCESS;
-        if (countdownInterval.current) {
-          clearInterval(countdownInterval.current);
-          countdownInterval.current = null;
-        }
+        pauseCountdown();
         cleanup(); // Hentikan kamera karena sudah selesai
         return;
       }
@@ -288,6 +341,8 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
         setError(data.error || 'Gerakan tidak dikenali. Coba lagi.');
         statusRef.current = STATUS.IDLE;
         setStatus(STATUS.IDLE);
+        // Attempt baru → jatah waktu penuh lagi, bukan sisa waktu lama.
+        startCountdown(data.timeout_seconds || 12);
         setTimeout(() => startCaptureLoop(), 1000);
         return;
       }
@@ -297,25 +352,29 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
         setTotalSteps(data.total_steps);
         setNextChallenge(data.next_challenge);
         setInstruction(buildInstruction(data.next_challenge));
-        setTimeLeft(data.timeout_seconds || 12);
         setRemainingAttempts(data.remaining_attempts || 3);
         setError(null);
         statusRef.current = STATUS.IDLE;
         setStatus(STATUS.IDLE);
-        startCountdown();
+        startCountdown(data.timeout_seconds || 12);
         setTimeout(() => startCaptureLoop(), 500);
         return;
       }
 
       setError(data.error || 'Terjadi kesalahan. Coba lagi.');
+      statusRef.current = STATUS.IDLE;
+      setStatus(STATUS.IDLE);
+      resumeCountdownTick();
       startCaptureLoop();
 
     } catch (err) {
       console.error('Upload error:', err);
+      if (!isMounted.current) return;
       setError(err.message || 'Gagal mengirim frame');
       statusRef.current = STATUS.IDLE;
       setStatus(STATUS.IDLE);
       if (remainingAttempts > 1) {
+        resumeCountdownTick();
         setTimeout(() => startCaptureLoop(), 1000);
       } else {
         setStatus(STATUS.FAILED);
@@ -441,8 +500,15 @@ export default function LivenessChallenge({ userId, onSuccess, onCancel }) {
             </div>
             <div className="text-center">
               <p className="text-xs text-gray-500">Waktu</p>
-              <p className={`text-2xl font-bold ${timeLeft <= 3 ? 'text-red-600' : 'text-gray-800'}`}>
-                {timeLeft}s
+              {/* Saat VERIFYING, timer sedang di-pause (lihat pauseCountdown).
+                  Tampilkan ikon jam pasir alih-alih angka detik supaya user
+                  paham timer memang tidak berjalan, bukan macet/bug. */}
+              <p className={`text-2xl font-bold ${
+                status === STATUS.VERIFYING
+                  ? 'text-blue-500'
+                  : timeLeft <= 3 ? 'text-red-600' : 'text-gray-800'
+              }`}>
+                {status === STATUS.VERIFYING ? '⏳' : `${timeLeft}s`}
               </p>
             </div>
           </div>
