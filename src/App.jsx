@@ -1,25 +1,34 @@
 'use client';
 
 import { useState,useEffect } from 'react'
+import React, { lazy, Suspense } from 'react';
 import LandingPage from './pages/LandingPage'
 import AdminLoginPage from './pages/AdminLoginPage'
 import DosenLoginPage from './pages/DosenLoginPage'
 import MahasiswaLoginPage from './pages/MahasiswaLoginPage'
-import AdminDashboard from './pages/AdminDashboard'
-import MahasiswaDashboard from './pages/MahasiswaDashboard'
-import DosenDashboard from './pages/DosenDashboard'
-import ManajemenPengguna from './pages/ManajemenPengguna'
-import FaceRecognitionPage from './pages/FaceRecognitionPage'
-import RekapAbsensiPage from './pages/RekapAbsensiPage'
-import KelolaMataKuliah from './pages/KelolaMataKuliah'
-import RegistrasiWajah from './pages/RegistrasiWajah';
-import KrsPage from './pages/KrsPage';
-import ManajemenEnrollment from './pages/ManajemenEnrollment';
-import ManualAttendancePage from './pages/ManualAttendancePage';
-import BantuanPage from './pages/BantuanPage';
+// import AdminDashboard from './pages/AdminDashboard'
+// import MahasiswaDashboard from './pages/MahasiswaDashboard'
+// import DosenDashboard from './pages/DosenDashboard'
+// import ManajemenPengguna from './pages/ManajemenPengguna'
+// import FaceRecognitionPage from './pages/FaceRecognitionPage'
+// import RekapAbsensiPage from './pages/RekapAbsensiPage'
+// import KelolaMataKuliah from './pages/KelolaMataKuliah'
+// import RegistrasiWajah from './pages/RegistrasiWajah';
+// import ManajemenEnrollment from './pages/ManajemenEnrollment';
+// import BantuanPage from './pages/BantuanPage';
+// ⭐ Lazy load komponen yang jarang diakses
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const DosenDashboard = lazy(() => import('./pages/DosenDashboard'));
+const MahasiswaDashboard = lazy(() => import('./pages/MahasiswaDashboard'));
+const ManajemenPengguna = lazy(() => import('./pages/ManajemenPengguna'));
+const KelolaMataKuliah = lazy(() => import('./pages/KelolaMataKuliah'));
+const ManajemenEnrollment = lazy(() => import('./pages/ManajemenEnrollment'));
+const FaceRecognitionPage = lazy(() => import('./pages/FaceRecognitionPage'));
+const RekapAbsensiPage = lazy(() => import('./pages/RekapAbsensiPage'));
+const RegistrasiWajah = lazy(() => import('./pages/RegistrasiWajah'));
+const BantuanPage = lazy(() => import('./pages/BantuanPage'));
 import { apiFetch } from './utils/api';
 import { EXPRESS_API_URL } from './config';
-
 function App() {
   const [userId, setUserId] = useState('')
   const [currentPage, setCurrentPage] = useState('landing')
@@ -33,6 +42,7 @@ function App() {
   const totalMahasiswa = users.filter(u => u.role === 'mahasiswa').length;
   const totalDosen = users.filter(u => u.role === 'dosen').length;
   const [faceStatus, setFaceStatus] = useState({}); // key: nim_nidn, value: boolean
+  //code untuk optimasi performa lighthouse
 
   // Di handleLogin atau handleAdminLogin
   // sessionStorage.setItem('token', data.token);
@@ -320,122 +330,136 @@ const handleDeleteDosen = async (id) => {
       {currentPage === 'dosen-login' && (
         <DosenLoginPage onNavigate={handleNavigate} onLogin={handleLogin} />
       )}
-      {currentPage === 'admin-dashboard' && (
-        <AdminDashboard 
-          onNavigate={handleNavigate} 
-          userName={userName} 
-          onLogout={handleLogout}
-          totalMahasiswa={totalMahasiswa}
-          totalDosen={totalDosen} 
-        />
+    {currentPage === 'admin-dashboard' && (
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <AdminDashboard
+            onNavigate={handleNavigate}
+            userName={userName}
+            onLogout={handleLogout}
+            totalMahasiswa={totalMahasiswa}
+            totalDosen={totalDosen}
+          />
+        </Suspense>
       )}
+
       {currentPage === 'manajemen-pengguna' && (
-        <ManajemenPengguna
-          mahasiswaList={mahasiswaList}
-          dosenList={dosenList}
-          faceStatus={faceStatus}
-          onResetFace={handleResetFace}
-          onNavigate={handleNavigate}
-          onAddMahasiswa={handleAddMahasiswa}
-          onEditMahasiswa={handleEditMahasiswa}
-          onDeleteMahasiswa={handleDeleteMahasiswa}
-          onAddDosen={handleAddDosen}
-          onEditDosen={handleEditDosen}
-          onDeleteDosen={handleDeleteDosen}
-        />
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <ManajemenPengguna
+            mahasiswaList={mahasiswaList}
+            dosenList={dosenList}
+            faceStatus={faceStatus}
+            onResetFace={handleResetFace}
+            onNavigate={handleNavigate}
+            onAddMahasiswa={handleAddMahasiswa}
+            onEditMahasiswa={handleEditMahasiswa}
+            onDeleteMahasiswa={handleDeleteMahasiswa}
+            onAddDosen={handleAddDosen}
+            onEditDosen={handleEditDosen}
+            onDeleteDosen={handleDeleteDosen}
+          />
+        </Suspense>
       )}
+
       {currentPage === 'kelola-matakuliah' && (
-        <KelolaMataKuliah 
-          dosenList={dosenList}
-          onNavigate={handleNavigate}
-          onAdd={handleAddMataKuliah}
-          onEdit={handleEditMataKuliah}
-          onDelete={handleDeleteMataKuliah}
-        />
-)}
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <KelolaMataKuliah
+            dosenList={dosenList}
+            onNavigate={handleNavigate}
+            onAdd={handleAddMataKuliah}
+            onEdit={handleEditMataKuliah}
+            onDelete={handleDeleteMataKuliah}
+          />
+        </Suspense>
+      )}
+
       {currentPage === 'mahasiswa-dashboard' && (
-        <MahasiswaDashboard
-          onNavigate={handleNavigate}
-          userName={userName}
-          userId={userId}
-          mahasiswaList={mahasiswaList}
-          manualAbsenEnabled={manualAbsenEnabled}
-          onLogout={handleLogout}
-          userData={userData}
-          faceStatus={faceStatus}
-        />
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <MahasiswaDashboard
+            onNavigate={handleNavigate}
+            userName={userName}
+            userId={userId}
+            mahasiswaList={mahasiswaList}
+            manualAbsenEnabled={manualAbsenEnabled}
+            onLogout={handleLogout}
+            userData={userData}
+            faceStatus={faceStatus}
+          />
+        </Suspense>
       )}
+
       {currentPage === 'face-recognition' && (
-        <FaceRecognitionPage 
-          onNavigate={handleNavigate} 
-          userName={userName}
-          userId={userId}
-          userData={userData} 
-        />
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <FaceRecognitionPage
+            onNavigate={handleNavigate}
+            userName={userName}
+            userId={userId}
+            userData={userData}
+          />
+        </Suspense>
       )}
+
       {currentPage === 'dosen-dashboard' && (
-        <DosenDashboard 
-          onNavigate={handleNavigate} 
-          userName={userName} 
-          userId={userId}
-          userData={userData}
-          onLogout={handleLogout}
-          onEnableManualAbsen={() => setManualAbsenEnabled(!manualAbsenEnabled)}
-          manualAbsenEnabled={manualAbsenEnabled}
-        />
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <DosenDashboard
+            onNavigate={handleNavigate}
+            userName={userName}
+            userId={userId}
+            userData={userData}
+            onLogout={handleLogout}
+            onEnableManualAbsen={() => setManualAbsenEnabled(!manualAbsenEnabled)}
+            manualAbsenEnabled={manualAbsenEnabled}
+          />
+        </Suspense>
       )}
+
       {currentPage === 'rekap-absensi' && (
-        <RekapAbsensiPage 
-          onNavigate={handleNavigate}
-          userRole={userRole}
-          userId={userId}
-          selectedCourse={selectedCourse}  // ← kirim data course
-          // selectedMataKuliah={selectedMataKuliah}
-          // attendanceData={attendanceData}
-          // onUpdateAttendance={handleUpdateAttendance}
-        />
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <RekapAbsensiPage
+            onNavigate={handleNavigate}
+            userRole={userRole}
+            userId={userId}
+            selectedCourse={selectedCourse}
+          />
+        </Suspense>
       )}
+
       {currentPage === 'registrasi-wajah' && (
-      <RegistrasiWajah
-        mahasiswaList={mahasiswaList}
-        userName={userName}
-        nim={userData?.nim_nidn}  // cukup userId, karena userData mungkin null
-        onNavigate={handleNavigate}
-        onRegisterFace={async (nim, image) => {
-        // Update lokal state
-        setUsers(prevUsers =>
-          prevUsers.map(user =>
-            user.nim_nidn === nim
-              ? { ...user, face_registered: true, face_image: image }
-              : user
-          )
-        );
-          // Optional: panggil API untuk simpan ke database
-          await fetchProfile();
-          await fetchFaceStatus();
-          onNavigate('mahasiswa-dashboard');
-        }}
-      />
-    )}
-      {/* {currentPage === 'krs' && (
-      <KrsPage
-        onNavigate={handleNavigate}
-        userId={userId}
-        userName={userName}
-        mahasiswa={userData} // Anda perlu menyediakan objek mahasiswa lengkap (prodi, semester)
-      /> */}
-    {/* )} */}
-    {currentPage === 'manajemen-enrollment' && (
-      <ManajemenEnrollment 
-      onNavigate={handleNavigate}
-      userData={userData} />
-    )}
-    {currentPage === 'bantuan' && (
-      <BantuanPage onNavigate={handleNavigate} role={userRole} />
-    )}
-    {/* {currentPage === 'manual-attendance' && (
-      <ManualAttendancePage onNavigate={handleNavigate} userName={userName} />
-)} */}
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <RegistrasiWajah
+            mahasiswaList={mahasiswaList}
+            userName={userName}
+            nim={userData?.nim_nidn}
+            onNavigate={handleNavigate}
+            onRegisterFace={async (nim, image) => {
+              setUsers(prevUsers =>
+                prevUsers.map(user =>
+                  user.nim_nidn === nim
+                    ? { ...user, face_registered: true, face_image: image }
+                    : user
+                )
+              );
+              await fetchProfile();
+              await fetchFaceStatus();
+              onNavigate('mahasiswa-dashboard');
+            }}
+          />
+        </Suspense>
+      )}
+
+      {currentPage === 'manajemen-enrollment' && (
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <ManajemenEnrollment
+            onNavigate={handleNavigate}
+            userData={userData}
+          />
+        </Suspense>
+      )}
+
+      {currentPage === 'bantuan' && (
+        <Suspense fallback={<div className="p-12 text-center">Memuat...</div>}>
+          <BantuanPage onNavigate={handleNavigate} role={userRole} />
+        </Suspense>
+      )}
     </div>
   )
 }

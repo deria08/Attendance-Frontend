@@ -30,7 +30,7 @@
 body {
   margin: 0;
   padding: 0;
-  background-image: url('./assets/bgstt.jpg');       /* jika gambar di public */
+  background-image: url('./assets/bgstt.webp');       /* jika gambar di public */
   background-size: cover;                  /* menutup seluruh area */
   background-position: center center;
   background-attachment: fixed;          /* agar tidak ikut scroll */

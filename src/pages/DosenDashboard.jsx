@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { apiFetch } from '../utils/api';
 import { EXPRESS_API_URL } from '../config';
 import Footer from '../components/Footer';
-import logoSTTP from '../assets/logostt.png';
+import logoSTTP from '../assets/logostt.webp';
 import Modal from '../components/Modal'; // untuk konfirmasi
 
 export default function DosenDashboard({ 

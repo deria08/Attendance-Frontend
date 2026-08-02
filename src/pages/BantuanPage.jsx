@@ -1,6 +1,6 @@
 import React from 'react';
 import Footer from '../components/Footer';
-import logoSTTP from '../assets/logostt.png';
+import logoSTTP from '../assets/logostt.webp';
 
 export default function BantuanPage({ onNavigate, role }) {
   // Konten berdasarkan role
@@ -112,6 +112,7 @@ export default function BantuanPage({ onNavigate, role }) {
               <img
                 src={logoSTTP}
                 alt="Logo STT Pati"
+                loading="lazy"
                 className="w-8 h-8 sm:w-12 sm:h-12 md:w-16 md:h-16 object-contain"
               />
               <div className="flex items-center gap-1 sm:gap-2">
