@@ -304,7 +304,7 @@ export default function FaceRecognitionPage({
 
   // ===== GPS =====
 const getLocationSamples = useCallback(
-  (sampleCount = 5, intervalMs = 1200) => {
+  (sampleCount = 3, intervalMs = 1200) => {
     return new Promise((resolve, reject) => {
       // Cek dukungan geolokasi
       if (!navigator.geolocation) {
