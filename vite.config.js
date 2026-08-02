@@ -51,9 +51,9 @@ export default defineConfig({
   plugins: [
     react(),
     compression({ algorithm: 'gzip' }),
-    purgecss({
-      content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
-    }),
+    // purgecss({
+    //   content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
+    // }),
   ],
   build: {
     rollupOptions: {
