@@ -18,6 +18,7 @@ export default function FaceRecognitionPage({
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const initializedRef = useRef(false); // flag agar inisialisasi hanya sekali
 
   // State liveness
   const [showLiveness, setShowLiveness] = useState(false);
@@ -135,33 +136,53 @@ export default function FaceRecognitionPage({
     }
   }, [courses, selectedCourse]);
 
-  // ===== 5. Kamera dengan penanganan error lebih baik =====
-  const initCamera = useCallback(async () => {
-    // Hentikan stream lama
+  // ===== 5. Kamera – cleanup =====
+  const cleanupCamera = useCallback(() => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+    setCameraReady(false);
+    initializedRef.current = false; // reset flag agar bisa inisialisasi ulang
+  }, []);
+
+  // ===== 6. Inisialisasi kamera =====
+  const initCamera = useCallback(async () => {
+    // Jika sudah aktif dan siap, tidak perlu inisialisasi ulang
+    if (cameraActive && cameraReady) {
+      console.log('Kamera sudah aktif dan siap');
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      console.warn('Video element not ready yet, initCamera ditunda');
+      // Jangan set error, karena bisa dipanggil sebelum mount
+      return;
+    }
+
+    // Hentikan stream lama jika ada
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
     setCameraError('');
     setCameraReady(false);
     setCameraActive(false);
 
-    // Pastikan videoRef.current tersedia
-    const video = videoRef.current;
-    if (!video) {
-      setCameraError('Video element not found. Silakan refresh halaman.');
-      return;
-    }
-
     try {
       console.log('Mengakses kamera...');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       });
       streamRef.current = stream;
       setCameraActive(true);
 
-      // Set srcObject
       video.srcObject = stream;
       video.load();
 
@@ -173,51 +194,67 @@ export default function FaceRecognitionPage({
           video.removeEventListener('loadedmetadata', onMetadata);
           resolve();
         });
-        // Cek jika sudah siap
+        // Jika sudah siap
         if (video.readyState >= 2) {
           clearTimeout(timeout);
           resolve();
         }
       });
 
-      // Coba play - ini akan error jika tidak ada interaksi, tapi kita abaikan
+      // Coba play – jika gagal karena autoplay, kita abaikan
       try {
         await video.play();
         console.log('Video play success');
       } catch (playErr) {
         console.warn('Autoplay ditolak, akan diputar saat user interaksi');
-        // Tapi kita tetap set cameraReady true
       }
 
-      // Set cameraReady true setelah metadata dimuat
       setCameraReady(true);
+      initializedRef.current = true;
       console.log('Camera ready');
-
     } catch (error) {
       console.error('Camera error:', error);
       setCameraError(error.message || 'Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.');
       setCameraActive(false);
+      initializedRef.current = false;
     }
-  }, []);
+  }, [cameraActive, cameraReady]);
 
-  // Auto init saat mount
-  useEffect(() => {
-    // Beri sedikit delay untuk memastikan ref terpasang
-    const timer = setTimeout(() => {
-      initCamera();
-    }, 100);
-    return () => {
-      clearTimeout(timer);
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
+  // ===== 7. Callback ref untuk video =====
+  const setVideoRef = useCallback(
+    (node) => {
+      if (node) {
+        // Video element tersedia
+        videoRef.current = node;
+        // Inisialisasi kamera hanya jika belum pernah atau belum siap
+        if (!initializedRef.current && !cameraActive) {
+          initCamera();
+        } else if (cameraActive && cameraReady) {
+          // Jika kamera sudah aktif tapi video baru dipasang (misal re-mount)
+          // kita tetap set srcObject jika stream masih ada
+          if (streamRef.current && !node.srcObject) {
+            node.srcObject = streamRef.current;
+            node.load();
+            node.play().catch(() => {});
+          }
+        }
+      } else {
+        // Video element di-unmount, cleanup
+        cleanupCamera();
       }
-      if (videoRef.current) videoRef.current.srcObject = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    },
+    [initCamera, cleanupCamera, cameraActive, cameraReady]
+  );
 
-  // Fungsi untuk memastikan video play
+  // ===== 8. Auto inisialisasi saat komponen mount – tidak perlu, karena ref callback menangani =====
+  // Efek cleanup saat unmount
+  useEffect(() => {
+    return () => {
+      cleanupCamera();
+    };
+  }, [cleanupCamera]);
+
+  // ===== 9. Fungsi untuk memastikan video play (interaksi user) =====
   const ensureVideoPlay = useCallback(async () => {
     const video = videoRef.current;
     if (!video || !video.srcObject) return false;
@@ -234,21 +271,7 @@ export default function FaceRecognitionPage({
     return true;
   }, []);
 
-  const stopCameraTracks = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-  }, []);
-
-  const cleanupCamera = useCallback(() => {
-    stopCameraTracks();
-    if (videoRef.current) videoRef.current.srcObject = null;
-    setCameraActive(false);
-    setCameraReady(false);
-  }, [stopCameraTracks]);
-
-  // ===== Fungsi capture =====
+  // ===== 10. capturePhoto =====
   const capturePhoto = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -297,7 +320,7 @@ export default function FaceRecognitionPage({
     [capturePhoto]
   );
 
-  // ===== GPS =====
+  // ===== 11. GPS =====
   const getLocationSamples = useCallback(
     (sampleCount = 8, intervalMs = 700) => {
       return new Promise((resolve, reject) => {
@@ -357,7 +380,7 @@ export default function FaceRecognitionPage({
     []
   );
 
-  // ===== Kirim absensi =====
+  // ===== 12. Kirim absensi =====
   const takeAttendance = useCallback(
     async (framesDataUrls, lat, lon, accuracy, samples) => {
       const formData = new FormData();
@@ -394,7 +417,7 @@ export default function FaceRecognitionPage({
     [userName, selectedCourse]
   );
 
-  // ===== Proses utama absensi =====
+  // ===== 13. Proses utama absensi =====
   const processAttendance = useCallback(async () => {
     const steps = [
       { label: 'Mengambil sampel GPS', status: 'pending' },
@@ -471,7 +494,7 @@ export default function FaceRecognitionPage({
     selectedCourse,
   ]);
 
-  // ===== Handler Start Scan =====
+  // ===== 14. Handler Start Scan =====
   const handleStartScan = useCallback(async () => {
     // Pastikan video play
     await ensureVideoPlay();
@@ -507,7 +530,7 @@ export default function FaceRecognitionPage({
     setShowLiveness(true);
   }, [ensureVideoPlay, cameraReady, attendanceStatus, selectedCourse, activeMeeting, livenessCompleted, processAttendance]);
 
-  // ===== Handler Liveness =====
+  // ===== 15. Handler Liveness =====
   const handleLivenessSuccess = useCallback(async () => {
     setShowLiveness(false);
     setLivenessCompleted(true);
@@ -519,7 +542,7 @@ export default function FaceRecognitionPage({
     setShowLiveness(false);
   }, []);
 
-  // ===== Handler modal =====
+  // ===== 16. Handler modal =====
   const handleCloseModal = useCallback(() => {
     setShowResultModal(false);
     if (scanResult?.success) {
@@ -539,7 +562,7 @@ export default function FaceRecognitionPage({
     onNavigate('mahasiswa-dashboard');
   }, [cleanupCamera, onNavigate]);
 
-  // ===== Update debug info =====
+  // ===== 17. Update debug info =====
   useEffect(() => {
     const video = videoRef.current;
     setDebugInfo({
@@ -554,6 +577,7 @@ export default function FaceRecognitionPage({
       srcObject: video ? !!video.srcObject : false,
       selectedCourse,
       activeMeeting: !!activeMeeting,
+      initialized: initializedRef.current,
     });
   }, [cameraActive, cameraReady, cameraError, selectedCourse, activeMeeting]);
 
@@ -698,7 +722,7 @@ export default function FaceRecognitionPage({
                   ) : (
                     <>
                       <video
-                        ref={videoRef}
+                        ref={setVideoRef}   // <-- Ganti ref dengan callback
                         autoPlay
                         playsInline
                         muted
@@ -898,7 +922,11 @@ export default function FaceRecognitionPage({
                     {JSON.stringify(debugInfo, null, 2)}
                   </pre>
                   <button
-                    onClick={() => initCamera()}
+                    onClick={() => {
+                      cleanupCamera();
+                      initializedRef.current = false;
+                      initCamera();
+                    }}
                     className="mt-2 w-full bg-blue-500 hover:bg-blue-600 text-white py-1 rounded text-sm transition"
                   >
                     Re-init Camera
